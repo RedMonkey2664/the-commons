@@ -79,7 +79,7 @@ export class NetworkClient {
 
   async joinZone(
     zoneId: ZoneId,
-    identity: { displayName: string; spriteKey: string },
+    identity: { displayName: string; spriteKey: string; fromZone?: string },
     handlers: NetworkHandlers,
   ): Promise<void> {
     this.handlers = handlers;
@@ -90,6 +90,7 @@ export class NetworkClient {
       zoneId,
       displayName: identity.displayName,
       spriteKey: identity.spriteKey,
+      fromZone: identity.fromZone,
     });
     this.room = room;
 
@@ -123,16 +124,26 @@ export class NetworkClient {
     });
   }
 
-  /** Send a step intent. Returns the sequence number it was sent with. */
+  /**
+   * Send a step intent. Returns the sequence number it was sent with.
+   *
+   * The counter only advances when a message is ACTUALLY sent. Bumping it for
+   * an intent that went nowhere (a step taken during the async join) would
+   * leave lastSentSeq permanently ahead of the server's echo, and
+   * reconciliation — which waits for the server to catch up — would never run
+   * again for the whole session.
+   */
   sendMove(dir: Direction): number {
+    if (!this.room) return this.seq;
     this.seq += 1;
-    this.room?.send(CLIENT_MESSAGE.move, { dir, seq: this.seq });
+    this.room.send(CLIENT_MESSAGE.move, { dir, seq: this.seq });
     return this.seq;
   }
 
   sendFace(facing: Direction): number {
+    if (!this.room) return this.seq;
     this.seq += 1;
-    this.room?.send(CLIENT_MESSAGE.face, { facing, seq: this.seq });
+    this.room.send(CLIENT_MESSAGE.face, { facing, seq: this.seq });
     return this.seq;
   }
 

@@ -17,10 +17,10 @@ import { Room, type Client } from 'colyseus';
 import type { Direction, JoinOptions, MoveIntent, FaceIntent, StatusIntent, ZoneConfig, ZoneId } from '@commons/shared';
 import {
   CLIENT_MESSAGE,
-  DIRECTION_VECTORS,
   MOVE_RATE_LIMIT,
   SERVER_MESSAGE,
   getZone,
+  resolveEntryPoint,
   tileInFront,
 } from '@commons/shared';
 import { PlayerSchema, ZoneState } from '../schemas/PlayerState.js';
@@ -68,7 +68,13 @@ export class ZoneRoom extends Room<ZoneState> {
   }
 
   override onJoin(client: Client, options: JoinOptions): void {
-    const spawn = this.zoneMap.spawnPoint;
+    // Arriving from a specific zone lands you at that door's entry point;
+    // arriving fresh uses the map's spawn. Resolved here because the server
+    // owns position — a client-chosen arrival tile would just be overruled.
+    const from = options?.fromZone;
+    const spawn = from
+      ? resolveEntryPoint(this.zone, from as ZoneId)
+      : this.zoneMap.spawnPoint;
 
     const player = new PlayerSchema();
     player.id = client.sessionId;
@@ -76,8 +82,10 @@ export class ZoneRoom extends Room<ZoneState> {
     // Real accounts arrive in Phase 3 (Supabase), and this is the seam.
     player.displayName = sanitizeName(options?.displayName);
     player.spriteKey = typeof options?.spriteKey === 'string' ? options.spriteKey : 'char_remote';
-    player.x = spawn.x;
-    player.y = spawn.y;
+    // Never spawn anyone inside a wall, whatever the config claims.
+    const safeSpawn = this.zoneMap.isWalkable(spawn) ? spawn : this.zoneMap.spawnPoint;
+    player.x = safeSpawn.x;
+    player.y = safeSpawn.y;
     player.facing = 'down';
     player.status = 'idle';
 
@@ -138,6 +146,13 @@ export class ZoneRoom extends Room<ZoneState> {
     if (!player) return;
     if (!isDirection(message?.facing)) return;
 
+    // Turning is synced state, so an unthrottled client could spam facing
+    // flips and make the server broadcast patches to every peer in the room.
+    // Same bucket as movement — 05 asks for interaction triggers to be rate
+    // limited, not just movement.
+    if (!this.spendMoveToken(client.sessionId)) return;
+    if (player.facing === message.facing) return;
+
     player.facing = message.facing;
     if (Number.isFinite(message?.seq)) player.lastSeq = Math.trunc(message.seq);
   }
@@ -146,6 +161,8 @@ export class ZoneRoom extends Room<ZoneState> {
     const player = this.state.players.get(client.sessionId);
     if (!player) return;
     if (!VALID_STATUSES.includes(message?.status as (typeof VALID_STATUSES)[number])) return;
+    if (player.status === message.status) return;
+    if (!this.spendMoveToken(client.sessionId)) return;
 
     player.status = message.status;
   }
@@ -203,5 +220,3 @@ function sanitizeName(raw: unknown): string {
   const cleaned = text.replace(/[^\p{L}\p{N} _.-]/gu, '').trim().slice(0, 16);
   return cleaned.length > 0 ? cleaned : 'Wanderer';
 }
-
-void DIRECTION_VECTORS;

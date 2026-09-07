@@ -16,7 +16,6 @@ export interface PlayerOptions {
   tile: TileCoord;
   facing?: Direction;
   textureKey?: string;
-  animPrefix?: string;
   isWalkable: (tile: TileCoord) => boolean;
   onDepart?: (from: TileCoord, to: TileCoord, facing: Direction) => void;
   onArrive?: (tile: TileCoord) => void;
@@ -37,16 +36,14 @@ export class Player {
 
   constructor(scene: Phaser.Scene, options: PlayerOptions) {
     const textureKey = options.textureKey ?? ASSET_KEYS.playerSheet;
-    const animPrefix = options.animPrefix ?? 'player';
-
-    registerCharacterAnimations(scene, animPrefix, textureKey);
+    registerCharacterAnimations(scene, textureKey);
 
     this.sprite = scene.add.sprite(0, 0, textureKey, 0);
     this.movement = new GridMovement(scene, this.sprite, {
       tile: options.tile,
       facing: options.facing ?? 'down',
       isWalkable: options.isWalkable,
-      animPrefix,
+      textureKey,
       onDepart: options.onDepart,
       onArrive: options.onArrive,
       onFacingChanged: options.onFacingChanged,

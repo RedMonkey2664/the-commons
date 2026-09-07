@@ -80,7 +80,7 @@ export abstract class ZoneScene extends Phaser.Scene {
   create(): void {
     // Booting a zone directly (isolation testing) must not depend on BootScene.
     if (!this.textures.exists(ASSET_KEYS.tileset)) generateAllPlaceholderArt(this);
-    registerCharacterAnimations(this, 'npc', ASSET_KEYS.npcSheet);
+    registerCharacterAnimations(this, ASSET_KEYS.npcSheet);
 
     this.cameras.main.setBackgroundColor(this.backgroundColor());
 
@@ -150,6 +150,7 @@ export abstract class ZoneScene extends Phaser.Scene {
     this.player = new Player(this, {
       tile: this.resolveSpawn(),
       facing: this.sceneData.facing ?? 'down',
+      textureKey: session.spriteKey,
       isWalkable: this.zoneMap.isWalkable,
       // Intent is sent as the step COMMITS locally, not on arrival: the client
       // predicts immediately and the server validates in parallel (02).
@@ -258,14 +259,23 @@ export abstract class ZoneScene extends Phaser.Scene {
     try {
       await network.joinZone(
         this.zone.id,
-        { displayName: session.displayName ?? 'Wanderer', spriteKey: session.spriteKey },
+        {
+          displayName: session.displayName ?? 'Wanderer',
+          spriteKey: session.spriteKey,
+          fromZone: this.sceneData.fromZone,
+        },
         {
           onPlayerAdd: (state, id) => this.multiplayer?.handlePlayerAdd(state, id),
           onPlayerChange: (state, id) => this.multiplayer?.handlePlayerChange(state, id),
           onPlayerRemove: (id) => this.multiplayer?.handlePlayerRemove(id),
           onCorrection: (message) => this.multiplayer?.handleCorrection(message),
           onError: (error) => console.warn('[net]', error.message),
-          onLeave: () => ui.hud?.setConnected(false),
+          onLeave: () => {
+            ui.hud?.setConnected(false);
+            // Drop every remote avatar. Without this a server restart leaves
+            // frozen ghosts standing in the square forever.
+            this.multiplayer?.destroy();
+          },
         },
       );
       ui.hud?.setConnected(true);

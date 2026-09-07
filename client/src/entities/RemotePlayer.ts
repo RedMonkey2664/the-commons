@@ -19,8 +19,6 @@ import { registerCharacterAnimations, idleFrameIndex, walkAnimKey } from '../art
 import { ASSET_KEYS } from '../art/placeholderArt';
 import { tileToWorld } from '../systems/GridMovement';
 
-const ANIM_PREFIX = 'remote';
-
 export interface RemotePlayerOptions {
   id: string;
   displayName: string;
@@ -33,6 +31,7 @@ export interface RemotePlayerOptions {
 export class RemotePlayer {
   readonly id: string;
   readonly displayName: string;
+  readonly textureKey: string;
   readonly sprite: Phaser.GameObjects.Sprite;
 
   tile: TileCoord;
@@ -50,8 +49,13 @@ export class RemotePlayer {
     this.facing = options.facing ?? 'down';
     this.status = options.status ?? 'idle';
 
-    const textureKey = options.spriteKey ?? ASSET_KEYS.remoteSheet;
-    registerCharacterAnimations(scene, ANIM_PREFIX, textureKey);
+    // Fall back only if the chosen sheet was never generated; otherwise honour
+    // the player's own sprite choice.
+    const requested = options.spriteKey;
+    this.textureKey =
+      requested && scene.textures.exists(requested) ? requested : ASSET_KEYS.remoteSheet;
+    registerCharacterAnimations(scene, this.textureKey);
+    const textureKey = this.textureKey;
 
     const world = tileToWorld(this.tile);
     this.sprite = scene.add
@@ -92,7 +96,11 @@ export class RemotePlayer {
     this.tile = { ...tile };
     const world = tileToWorld(this.tile);
 
+    // stop() does not fire onComplete, so the handle must be cleared by hand —
+    // otherwise setFacing()'s `if (!this.moveTween)` guard stays false forever
+    // and this avatar never re-renders a turn again.
     this.moveTween?.stop();
+    this.moveTween = undefined;
 
     // More than one tile means we missed an update. Snap.
     if (distance > NETWORK.snapThresholdTiles) {
@@ -101,7 +109,7 @@ export class RemotePlayer {
       return;
     }
 
-    this.sprite.anims.play(walkAnimKey(ANIM_PREFIX, facing), true);
+    this.sprite.anims.play(walkAnimKey(this.textureKey, facing), true);
     this.moveTween = this.scene.tweens.add({
       targets: this.sprite,
       x: world.x,

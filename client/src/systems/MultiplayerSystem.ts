@@ -84,6 +84,7 @@ export class MultiplayerSystem {
     const remote = new RemotePlayer(this.scene, {
       id: sessionId,
       displayName: state.displayName,
+      spriteKey: state.spriteKey,
       tile: { x: state.x, y: state.y },
       facing: state.facing,
       status: state.status,
@@ -115,8 +116,17 @@ export class MultiplayerSystem {
     this.onRosterChange?.('leave', displayName);
   }
 
-  /** Server rejected an intent. It is authoritative; snap without argument. */
+  /**
+   * The server rejected an intent.
+   *
+   * Still subject to the same staleness rule as reconcileLocal: a correction
+   * describes the world as of `message.seq`. If we have sent intents since, its
+   * position is already out of date and snapping to it would rubber-band the
+   * player backwards — which a burst hitting the rate limiter can trigger
+   * during entirely legitimate play.
+   */
   handleCorrection(message: CorrectionMessage): void {
+    if (message.seq < this.network.lastSentSeq) return;
     this.snapLocalTo({ x: message.x, y: message.y });
     this.player.movement.face(message.facing);
   }

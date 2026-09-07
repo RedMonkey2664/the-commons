@@ -167,10 +167,19 @@ try {
   });
   const page = await context.newPage();
 
+  // This suite runs with NO server on purpose, so a refused websocket is the
+  // expected offline path, not a defect. Everything else is a real error.
+  const isExpectedOffline = (text) =>
+    /ERR_CONNECTION_REFUSED|WebSocket|ws:\/\/localhost|net::ERR/i.test(text);
+
   const consoleErrors = [];
-  page.on('pageerror', (error) => consoleErrors.push(String(error)));
+  page.on('pageerror', (error) => {
+    if (!isExpectedOffline(String(error))) consoleErrors.push(String(error));
+  });
   page.on('console', (message) => {
-    if (message.type() === 'error') consoleErrors.push(message.text());
+    if (message.type() === 'error' && !isExpectedOffline(message.text())) {
+      consoleErrors.push(message.text());
+    }
   });
 
   await page.goto(URL, { waitUntil: 'domcontentloaded' });
@@ -304,7 +313,15 @@ try {
   await page.screenshot({ path: resolve(shotDir, 'phase0_dialogue.png') });
   console.log(`  wrote ${shotDir}`);
 
-  check('no uncaught page errors', consoleErrors.length === 0, consoleErrors.slice(0, 3).join(' | '));
+  check('no unexpected page errors', consoleErrors.length === 0, consoleErrors.slice(0, 3).join(' | '));
+
+  // The whole point of running this suite serverless: the zone must stay
+  // playable when the connection fails.
+  const offline = await page.evaluate((sceneKey) => {
+    const scene = window.__COMMONS__.game.scene.getScene(sceneKey);
+    return { connected: Boolean(scene.network?.isConnected), hasPlayer: Boolean(scene.player) };
+  }, SCENE_KEY);
+  check('runs single-player with no server', offline.connected === false && offline.hasPlayer === true);
 
   if (keepOpen) {
     console.log('\n--keep: leaving the browser open. Ctrl+C to exit.');

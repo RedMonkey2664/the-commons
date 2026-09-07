@@ -11,8 +11,16 @@ import type { Direction } from '@commons/shared';
 import { MOVEMENT } from '@commons/shared';
 import { CHAR_FRAMES_PER_ROW, CHAR_ROWS } from './placeholderArt';
 
-export function walkAnimKey(prefix: string, direction: Direction): string {
-  return `${prefix}-walk-${direction}`;
+/**
+ * Animation keys are derived from the TEXTURE key, not a caller-chosen prefix.
+ *
+ * With a shared prefix, two characters using different sheets would collide:
+ * registration is guarded by `anims.exists()`, so the second sheet silently
+ * reuses the first one's frames. Keying on the texture makes that impossible,
+ * which matters as soon as players can pick different sprites.
+ */
+export function walkAnimKey(textureKey: string, direction: Direction): string {
+  return `${textureKey}-walk-${direction}`;
 }
 
 /** First frame of a direction's cycle doubles as its idle pose (04). */
@@ -26,15 +34,11 @@ export function idleFrameIndex(direction: Direction): number {
  * frameRate is MOVEMENT.walkFrameRate (8fps) — deliberately choppy. Per 10:
  * "not smooth 60fps human walking — the slight choppiness is the aesthetic."
  */
-export function registerCharacterAnimations(
-  scene: Phaser.Scene,
-  prefix: string,
-  textureKey: string,
-): void {
+export function registerCharacterAnimations(scene: Phaser.Scene, textureKey: string): void {
   const directions: Direction[] = ['down', 'left', 'right', 'up'];
 
   for (const direction of directions) {
-    const key = walkAnimKey(prefix, direction);
+    const key = walkAnimKey(textureKey, direction);
     if (scene.anims.exists(key)) continue;
 
     const base = CHAR_ROWS[direction] * CHAR_FRAMES_PER_ROW;

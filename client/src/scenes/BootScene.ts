@@ -39,9 +39,9 @@ export class BootScene extends Phaser.Scene {
   create(): void {
     generateAllPlaceholderArt(this);
 
-    registerCharacterAnimations(this, 'player', ASSET_KEYS.playerSheet);
-    registerCharacterAnimations(this, 'remote', ASSET_KEYS.remoteSheet);
-    registerCharacterAnimations(this, 'npc', ASSET_KEYS.npcSheet);
+    for (const sheet of [ASSET_KEYS.playerSheet, ASSET_KEYS.remoteSheet, ASSET_KEYS.npcSheet]) {
+      registerCharacterAnimations(this, sheet);
+    }
 
     // Returning players skip name entry — 01's "no onboarding tax each session".
     if (session.isIdentified) {

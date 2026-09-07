@@ -34,6 +34,8 @@ export class DialogueBox {
   private revealed = 0;
   private revealTimer?: Phaser.Time.TimerEvent;
   private arrowTween?: Phaser.Tweens.Tween;
+  /** In-flight close animation, so a re-show can cancel it. */
+  private closeTween?: Phaser.Tweens.Tween;
   private onClose?: () => void;
   private readonly wrapWidth: number;
 
@@ -119,11 +121,18 @@ export class DialogueBox {
       this.speakerText.setVisible(false);
     }
 
+    // A show() landing inside the 180ms close animation must cancel it. If the
+    // close tween is left to complete it hides the container and clears the
+    // text while _visible is true — an invisible box that still eats Space.
+    const closing = this.closeTween !== undefined;
+    this.closeTween?.stop();
+    this.closeTween = undefined;
+
     const wasVisible = this._visible;
     this._visible = true;
     this.container.setVisible(true);
 
-    if (!wasVisible) {
+    if (!wasVisible || closing) {
       // Slide up from below the screen edge.
       const restY = VIEWPORT.height - BOX_HEIGHT - SPACING.hudMargin;
       this.container.y = VIEWPORT.height + 4;
@@ -169,12 +178,13 @@ export class DialogueBox {
     this.arrowTween = undefined;
     this.advanceArrow.setVisible(false);
 
-    this.scene.tweens.add({
+    this.closeTween = this.scene.tweens.add({
       targets: this.container,
       y: VIEWPORT.height + 4,
       duration: UI.dialogue.slideMs,
       ease: UI.dialogue.slideEase,
       onComplete: () => {
+        this.closeTween = undefined;
         this.container.setVisible(false);
         this.text.setText('');
         const callback = this.onClose;
@@ -215,6 +225,15 @@ export class DialogueBox {
     this.text.setWordWrapWidth(0, false);
 
     const page = this.pages[this.pageIndex] ?? '';
+
+    // Guard the empty page before scheduling: `repeat: -1` means INFINITE in
+    // Phaser, so a blank page (whitespace-only text, or a stray '|') would spin
+    // the reveal timer forever and stack an arrow tween every 30ms.
+    if (page.length === 0) {
+      this.showAdvanceArrow();
+      return;
+    }
+
     this.revealTimer = this.scene.time.addEvent({
       delay: UI.dialogue.revealMsPerChar,
       repeat: page.length - 1,
@@ -224,8 +243,6 @@ export class DialogueBox {
         if (this.revealed >= page.length) this.showAdvanceArrow();
       },
     });
-
-    if (page.length === 0) this.showAdvanceArrow();
   }
 
   private completeReveal(): void {
@@ -253,6 +270,7 @@ export class DialogueBox {
   destroy(): void {
     this.revealTimer?.remove();
     this.arrowTween?.stop();
+    this.closeTween?.stop();
     this.container.destroy(true);
   }
 }

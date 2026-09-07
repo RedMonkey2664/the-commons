@@ -31,8 +31,8 @@ export interface GridMovementOptions {
   facing?: Direction;
   /** Injected collision query. Returning false triggers a bump. */
   isWalkable: (tile: TileCoord) => boolean;
-  /** Animation key prefix, e.g. 'player'. */
-  animPrefix: string;
+  /** Texture key; animation keys are derived from it. */
+  textureKey: string;
   /** Override the 130ms default (used by remote players and a future run toggle). */
   stepDurationMs?: number;
   /** Set 0 to move immediately on a direction press instead of turning first. */
@@ -176,10 +176,20 @@ export class GridMovement {
 
   /** Turn without moving. Used by the turn-in-place path and on a bump. */
   face(direction: Direction): void {
+    this.applyFacing(direction, true);
+  }
+
+  /**
+   * @param notify fire onFacingChanged. False when a move is about to be
+   *   reported anyway: the move already carries its direction, and emitting
+   *   both doubles this player's message rate for a single step — enough,
+   *   against the server's shared token bucket, to throttle ordinary walking.
+   */
+  private applyFacing(direction: Direction, notify: boolean): void {
     if (this.facing === direction) return;
     this.facing = direction;
     this.showIdleFrame();
-    this.options.onFacingChanged?.(direction);
+    if (notify) this.options.onFacingChanged?.(direction);
   }
 
   /**
@@ -191,13 +201,16 @@ export class GridMovement {
       return 'ignored';
     }
 
-    this.face(direction);
-
+    // Test walkability BEFORE turning, so we know whether this turn will be
+    // reported by its own message (a bump) or ride along with a move.
     const target = tileInFront(this.tile, direction);
     if (!this.options.isWalkable(target)) {
+      this.face(direction);
       this.bump(direction);
       return 'blocked';
     }
+
+    this.applyFacing(direction, false);
 
     const from = { ...this.tile };
     this.tile = target;
@@ -205,7 +218,7 @@ export class GridMovement {
     this.options.onDepart?.(from, target, direction);
 
     // `true` = ignoreIfPlaying, so chained tiles don't restart the walk cycle.
-    this.sprite.anims.play(walkAnimKey(this.options.animPrefix, direction), true);
+    this.sprite.anims.play(walkAnimKey(this.options.textureKey, direction), true);
 
     const to = tileToWorld(target);
     this.activeTween = this.scene.tweens.add({

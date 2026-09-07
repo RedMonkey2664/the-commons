@@ -68,6 +68,15 @@ export interface JoinOptions {
   zoneId: string;
   displayName: string;
   spriteKey: string;
+  /**
+   * Zone the player is arriving FROM, so the server can place them at the
+   * matching entry point rather than the generic spawn — walking back and
+   * forth through a door should put you on the correct side of it (03).
+   *
+   * The server owns position, so it must resolve this; if the client picked
+   * its own arrival tile the server would immediately overrule it.
+   */
+  fromZone?: string;
 }
 
 /**

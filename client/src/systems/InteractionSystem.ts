@@ -28,6 +28,8 @@ const TILE = SPACING.tile;
 export class InteractionSystem {
   /** One bubble per interactable id, created lazily and reused. */
   private readonly bubbles = new Map<string, Phaser.GameObjects.Image>();
+  /** Its bob tween, so destroying a bubble doesn't leave the tween running. */
+  private readonly bubbleTweens = new Map<string, Phaser.Tweens.Tween>();
 
   constructor(
     private readonly scene: Phaser.Scene,
@@ -80,10 +82,7 @@ export class InteractionSystem {
       const existing = this.bubbles.get(object.id);
 
       if (shouldShow && !existing) this.createBubble(object);
-      else if (!shouldShow && existing) {
-        existing.destroy();
-        this.bubbles.delete(object.id);
-      }
+      else if (!shouldShow && existing) this.removeBubble(object.id);
     }
   }
 
@@ -99,7 +98,7 @@ export class InteractionSystem {
 
     // Appears instantly (appearMs is 0); the bob is idle motion only, so the
     // cue itself is never gated behind an animation.
-    this.scene.tweens.add({
+    const bob = this.scene.tweens.add({
       targets: bubble,
       y: y - UI.interactBubble.bobPixels,
       duration: UI.interactBubble.bobMs,
@@ -109,10 +108,17 @@ export class InteractionSystem {
     });
 
     this.bubbles.set(object.id, bubble);
+    this.bubbleTweens.set(object.id, bob);
+  }
+
+  private removeBubble(id: string): void {
+    this.bubbleTweens.get(id)?.stop();
+    this.bubbleTweens.delete(id);
+    this.bubbles.get(id)?.destroy();
+    this.bubbles.delete(id);
   }
 
   destroy(): void {
-    for (const bubble of this.bubbles.values()) bubble.destroy();
-    this.bubbles.clear();
+    for (const id of [...this.bubbles.keys()]) this.removeBubble(id);
   }
 }
