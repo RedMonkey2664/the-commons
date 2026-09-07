@@ -203,7 +203,7 @@ try {
   const boot = await gameState(page);
   check('Town Square scene is active', boot?.active === true);
   check('map is 40x30', boot?.mapSize.w === 40 && boot?.mapSize.h === 30, JSON.stringify(boot?.mapSize));
-  check('11 interactables parsed from the map', boot?.interactableCount === 11, `got ${boot?.interactableCount}`);
+  check('12 interactables parsed from the map', boot?.interactableCount === 12, `got ${boot?.interactableCount}`);
   check('player spawned at (19,20)', boot?.tile.x === 19 && boot?.tile.y === 20, JSON.stringify(boot?.tile));
 
   // --- holding a direction chains tiles ---------------------------------
@@ -263,12 +263,14 @@ try {
   check('walking into the signpost does not move the player', afterBump.tile.x === 19, `x=${afterBump.tile.x}`);
   check('player still turns to face the obstacle', afterBump.facing === 'right', afterBump.facing);
 
-  // Park gate at the top of the north avenue.
-  await teleport(page, 19, 3, 'up');
+  // The fountain rim. Deliberately NOT a door: since Phase 2 doors actually
+  // transition, so walking onto one here would tear down the scene this suite
+  // is testing. Door transitions are covered by tools/phase2_world.mjs.
+  await teleport(page, 19, 19, 'up');
   await holdKey(page, 'KeyW', 600);
   const afterEdge = await gameState(page);
-  check('cannot walk off the north edge of the map', afterEdge.tile.y >= 0 && afterEdge.tile.y <= 3, `y=${afterEdge.tile.y}`);
-  check('stepping onto a door tile fires its interaction', afterEdge.dialogueVisible === true);
+  check('cannot walk into the fountain', afterEdge.tile.y === 19, `y=${afterEdge.tile.y}`);
+  check('faces the fountain after bumping it', afterEdge.facing === 'up', afterEdge.facing);
 
   // --- interaction + dialogue -------------------------------------------
   console.log('\ninteraction');

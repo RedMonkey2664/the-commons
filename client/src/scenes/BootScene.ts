@@ -16,6 +16,7 @@ import { COLORS, TYPOGRAPHY, hex } from '@commons/shared';
 import {
   ASSET_KEYS,
   generateCharacterSheet,
+  generateInteractableSprites,
   generateObjectSprites,
   generateTileset,
 } from '../art/placeholderArt';
@@ -120,7 +121,16 @@ export class BootScene extends Phaser.Scene {
           generateCharacterSheet(this, ASSET_KEYS.npcSheet, COLORS.npcBody);
         },
       },
-      { label: 'putting up the signs', run: () => generateObjectSprites(this) },
+      {
+        label: 'putting up the signs',
+        run: () => {
+          generateObjectSprites(this);
+          // Pods, seats, cabinets, jukeboxes. Easy to forget here because
+          // generateAllPlaceholderArt() covers them for isolation-booted zones,
+          // which masks the omission everywhere except the real boot path.
+          generateInteractableSprites(this);
+        },
+      },
       {
         label: 'teaching everyone to walk',
         run: () => {

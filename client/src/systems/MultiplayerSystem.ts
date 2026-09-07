@@ -24,6 +24,7 @@
 import type Phaser from 'phaser';
 import type { CorrectionMessage, PlayerStatus, TileCoord } from '@commons/shared';
 import { RemotePlayer } from '../entities/RemotePlayer';
+import { rememberPerson } from '../ui/FriendsPanel';
 import type { Player } from '../entities/Player';
 import type { NetworkClient, NetworkPlayer } from './NetworkClient';
 
@@ -31,6 +32,8 @@ export interface MultiplayerSystemOptions {
   scene: Phaser.Scene;
   network: NetworkClient;
   player: Player;
+  /** Display name of the zone, recorded against people we meet here. */
+  zoneName: string;
   /** Called when someone joins or leaves, for the "friend joined" popup. */
   onRosterChange?: (event: 'join' | 'leave', displayName: string) => void;
 }
@@ -40,6 +43,7 @@ export class MultiplayerSystem {
   private readonly scene: Phaser.Scene;
   private readonly network: NetworkClient;
   private readonly player: Player;
+  private readonly zoneName: string;
   private readonly onRosterChange?: (event: 'join' | 'leave', displayName: string) => void;
 
   /** Suppresses the join popup for players already present when we arrived. */
@@ -49,6 +53,7 @@ export class MultiplayerSystem {
     this.scene = options.scene;
     this.network = options.network;
     this.player = options.player;
+    this.zoneName = options.zoneName;
     this.onRosterChange = options.onRosterChange;
 
     // Anyone already in the room arrives as a burst of onAdd calls; treat the
@@ -72,6 +77,14 @@ export class MultiplayerSystem {
     }));
   }
 
+  /** Everyone else in this room, for the friends panel. */
+  get roster(): Array<{ displayName: string; status: string }> {
+    return [...this.remotes.values()].map((r) => ({
+      displayName: r.displayName,
+      status: r.status,
+    }));
+  }
+
   handlePlayerAdd(state: NetworkPlayer, sessionId: string): void {
     if (sessionId === this.network.sessionId) {
       // Our own avatar is the locally predicted one; adopt the server spawn.
@@ -90,6 +103,9 @@ export class MultiplayerSystem {
       status: state.status,
     });
     this.remotes.set(sessionId, remote);
+    // Remembered locally so they still appear in the friends panel, offline,
+    // after they leave. Replaced by a real friends table in Phase 3.
+    rememberPerson(state.displayName, this.zoneName);
 
     if (this.initialSyncDone) this.onRosterChange?.('join', state.displayName);
   }

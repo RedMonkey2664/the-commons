@@ -18,13 +18,14 @@
 
 import Phaser from 'phaser';
 import type { Direction, TileCoord, ZoneConfig, ZoneId } from '@commons/shared';
-import { CAMERA, COLORS, VIEWPORT, resolveEntryPoint } from '@commons/shared';
+import { CAMERA, COLORS, VIEWPORT, ZONES, ZONE_TRANSITION, resolveEntryPoint } from '@commons/shared';
 import { ASSET_KEYS, generateAllPlaceholderArt } from '../art/placeholderArt';
 import { registerCharacterAnimations } from '../art/characterAnimations';
 import { Player } from '../entities/Player';
 import { AmbientAnimator } from '../systems/AmbientAnimator';
 import { InputController } from '../systems/InputController';
 import { InteractionSystem } from '../systems/InteractionSystem';
+import type { InteractableObject } from '@commons/shared';
 import { tileToWorld } from '../systems/GridMovement';
 import { ZoneMap } from '../systems/ZoneMap';
 import { UIScene, ui } from '../ui/UIScene';
@@ -61,6 +62,8 @@ export abstract class ZoneScene extends Phaser.Scene {
   private sceneData: ZoneSceneData = {};
   /** Tracks hint visibility so it is only toggled on an actual change. */
   private hintHidden = false;
+  /** Set for the duration of a zone change, so it can't be started twice. */
+  private transitioning = false;
 
   protected constructor(zone: ZoneConfig) {
     super({ key: zone.sceneKey });
@@ -69,6 +72,13 @@ export abstract class ZoneScene extends Phaser.Scene {
 
   init(data: ZoneSceneData): void {
     this.sceneData = data ?? {};
+
+    // Phaser REUSES scene instances, so every field that survives a restart has
+    // to be reset here. Missing this left `transitioning` true after the first
+    // departure, which silently disabled every later exit from that zone — a
+    // bug that only shows up on the second transition, never the first.
+    this.transitioning = false;
+    this.hintHidden = false;
   }
 
   preload(): void {
@@ -94,17 +104,38 @@ export abstract class ZoneScene extends Phaser.Scene {
     // this system, and both callbacks resolve lazily, so this ordering keeps
     // every field assigned before anything can fire.
     this.controls = new InputController(this);
-    this.interactions = new InteractionSystem(
-      this,
-      this.zone,
-      this.zoneMap,
-      (blocked) => this.player.setBlocked(blocked),
-    );
+    this.interactions = new InteractionSystem(this, this.zone, this.zoneMap, {
+      setBlocked: (blocked) => this.player.setBlocked(blocked),
+      transitionTo: (zoneId) => this.transitionTo(zoneId),
+      isSitting: () => this.player.isSitting,
+      sit: (status) => {
+        this.player.sit(status);
+        this.multiplayer?.pushStatus(status);
+      },
+      stand: () => {
+        this.player.stand();
+        this.multiplayer?.pushStatus('idle');
+      },
+    });
 
     this.createPlayer();
     this.configureCamera();
 
     this.ensureUi();
+
+    // The panel asks the scene for the roster rather than being pushed updates,
+    // so it always reflects the room as of the moment it is opened.
+    ui.friends?.setEntriesProvider(() =>
+      (this.multiplayer?.roster ?? []).map((person) => ({
+        displayName: person.displayName,
+        online: true,
+        zone: this.zone.displayName,
+        status: person.status,
+      })),
+    );
+
+    // Arriving half of the zone transition (10): fade in at the new spawn.
+    this.cameras.main.fadeIn(ZONE_TRANSITION.fadeInMs, 0, 0, 0);
 
     if (this.sceneData.multiplayer !== false) void this.connect();
 
@@ -128,6 +159,12 @@ export abstract class ZoneScene extends Phaser.Scene {
       if (this.controls.justPressed('interact')) dialogue?.advance();
       return;
     }
+
+    if (this.controls.justPressed('menu')) ui.friends?.toggle();
+
+    // The friends panel is a modal overlay; the world keeps rendering but stops
+    // taking input, so nobody walks off while reading who is online.
+    if (ui.friends?.isOpen) return;
 
     this.player.update(time, this.controls.heldDirection());
 
@@ -199,6 +236,23 @@ export abstract class ZoneScene extends Phaser.Scene {
   }
 
   /**
+   * Sprite for each interactable kind.
+   *
+   * An object can override this with a `sprite` property in Tiled, which is how
+   * a study-room desk and a library focus pod share the `focus_pod` KIND (same
+   * behaviour) while looking like different furniture. Behaviour comes from the
+   * kind, appearance from the map — neither needs a special case in code.
+   */
+  private static readonly KIND_SPRITE: Partial<Record<InteractableObject['kind'], string>> = {
+    focus_pod: ASSET_KEYS.focusPod,
+    seat: ASSET_KEYS.seat,
+    reading_nook: ASSET_KEYS.readingNook,
+    jukebox: ASSET_KEYS.jukebox,
+    cabinet: ASSET_KEYS.cabinetLit,
+    signpost: ASSET_KEYS.signpost,
+  };
+
+  /**
    * Renders sprites for map objects. Purely presentational — collision and
    * interaction come from ZoneMap, not from these sprites.
    */
@@ -236,10 +290,14 @@ export abstract class ZoneScene extends Phaser.Scene {
           break;
         }
         default: {
-          // Signposts and, later, pods/seats/cabinets/jukeboxes. A kind with no
-          // dedicated sprite yet still gets a visible marker.
+          const override = object.props['sprite'];
+          const preferred =
+            typeof override === 'string' && this.textures.exists(override)
+              ? override
+              : ZoneScene.KIND_SPRITE[object.kind];
+
           this.add
-            .image(world.x, world.y, ASSET_KEYS.signpost)
+            .image(world.x, world.y, preferred ?? ASSET_KEYS.signpost)
             .setOrigin(0.5, 1)
             .setDepth(world.y);
           break;
@@ -263,6 +321,48 @@ export abstract class ZoneScene extends Phaser.Scene {
   protected onZoneReady(): void {}
 
   /**
+   * Register an interactable that is not in the Tiled map, and give it a
+   * sprite. Used by the Arcade to build cabinets from minigames.config.
+   */
+  protected registerInteractable(object: InteractableObject): void {
+    this.zoneMap.registerInteractable(object);
+  }
+
+  /**
+   * Walk from this zone into another (10).
+   *
+   * 250ms fade out, brief hold, 250ms fade in at the new spawn. The room swap
+   * is kicked off DURING the fade rather than after it, so the network
+   * round-trip is masked by the transition instead of showing up as a hitch on
+   * the other side.
+   */
+  protected transitionTo(zoneId: ZoneId): void {
+    if (this.transitioning) return;
+
+    const target = ZONES.find((z) => z.id === zoneId);
+    if (!target) return;
+
+    this.transitioning = true;
+    this.player.setBlocked(true);
+    ui.friends?.close();
+
+    // Leave the current room now, under cover of the fade.
+    void this.network?.leave();
+    this.network = undefined;
+
+    const camera = this.cameras.main;
+    camera.fadeOut(ZONE_TRANSITION.fadeOutMs, 0, 0, 0);
+    camera.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => {
+      this.time.delayedCall(ZONE_TRANSITION.holdMs, () => {
+        this.scene.start(target.sceneKey, {
+          fromZone: this.zone.id,
+          multiplayer: this.sceneData.multiplayer,
+        } satisfies ZoneSceneData);
+      });
+    });
+  }
+
+  /**
    * Join this zone's room. Failure is non-fatal by design — an unreachable
    * server should leave you standing in a working single-player town, not at a
    * broken screen.
@@ -275,6 +375,7 @@ export abstract class ZoneScene extends Phaser.Scene {
       scene: this,
       network,
       player: this.player,
+      zoneName: this.zone.displayName,
       onRosterChange: (event, displayName) => {
         ui.popup?.show(
           event === 'join' ? `${displayName} joined the world` : `${displayName} left`,

@@ -87,6 +87,18 @@ export class ZoneMap {
   /** The one collision query, from the shared parser. Injected into GridMovement. */
   isWalkable = (tile: TileCoord): boolean => this.walkable(tile);
 
+  /**
+   * Add an interactable that is not in the Tiled map.
+   *
+   * The Arcade builds cabinets from minigames.config at runtime; routing them
+   * through here means the interaction system, the "!" bubbles and collision
+   * all treat them exactly like map objects, with no special case anywhere.
+   */
+  registerInteractable(object: InteractableObject): void {
+    this.interactables.push(object);
+    if (object.blocks) this.parsed.objectBlocked.add(`${object.tile.x},${object.tile.y}`);
+  }
+
   interactableAt(tile: TileCoord): InteractableObject | undefined {
     return this.interactables.find((o) => o.tile.x === tile.x && o.tile.y === tile.y);
   }

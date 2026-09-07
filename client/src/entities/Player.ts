@@ -8,6 +8,7 @@
 
 import Phaser from 'phaser';
 import type { CharacterState, Direction, PlayerStatus, TileCoord } from '@commons/shared';
+import { SIT } from '@commons/shared';
 import { GridMovement } from '../systems/GridMovement';
 import { registerCharacterAnimations } from '../art/characterAnimations';
 import { ASSET_KEYS } from '../art/placeholderArt';
@@ -34,7 +35,7 @@ export class Player {
    */
   status: PlayerStatus = 'idle';
 
-  constructor(scene: Phaser.Scene, options: PlayerOptions) {
+  constructor(private readonly scene: Phaser.Scene, options: PlayerOptions) {
     const textureKey = options.textureKey ?? ASSET_KEYS.playerSheet;
     registerCharacterAnimations(scene, textureKey);
 
@@ -60,6 +61,46 @@ export class Player {
 
   get state(): CharacterState {
     return this.movement.state;
+  }
+
+  get isSitting(): boolean {
+    return this.movement.state === 'SITTING';
+  }
+
+  /**
+   * Sit down. 10 specifies a 150ms cross-fade from standing to seated with NO
+   * positional tween — you already walked to the tile, so this is a snap-to-seat.
+   *
+   * The seated SPRITE is Phase 5 art; until then the pose is faked by settling
+   * the character down and squashing slightly, which reads as sitting at this
+   * scale and keeps the specified 150ms timing honest.
+   */
+  sit(status: PlayerStatus = 'idle'): void {
+    if (this.isSitting) return;
+    this.movement.setSitting(true);
+    this.status = status;
+
+    this.scene.tweens.add({
+      targets: this.sprite,
+      y: this.sprite.y + 7,
+      scaleY: 0.88,
+      duration: SIT.crossFadeMs,
+      ease: 'Quad.easeOut',
+    });
+  }
+
+  stand(): void {
+    if (!this.isSitting) return;
+    this.movement.setSitting(false);
+    this.status = 'idle';
+
+    this.scene.tweens.add({
+      targets: this.sprite,
+      y: this.sprite.y - 7,
+      scaleY: 1,
+      duration: SIT.crossFadeMs,
+      ease: 'Quad.easeOut',
+    });
   }
 
   update(time: number, held: Direction | null): void {

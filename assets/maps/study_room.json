@@ -1,0 +1,1117 @@
+{
+ "compressionlevel": -1,
+ "height": 14,
+ "infinite": false,
+ "layers": [
+  {
+   "data": [
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    35,
+    35,
+    35,
+    35,
+    35,
+    35,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    35,
+    35,
+    35,
+    35,
+    35,
+    35,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    35,
+    35,
+    35,
+    35,
+    35,
+    35,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    35,
+    35,
+    35,
+    35,
+    35,
+    35,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    35,
+    35,
+    35,
+    35,
+    35,
+    35,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39,
+    39
+   ],
+   "height": 14,
+   "id": 1,
+   "name": "ground",
+   "opacity": 1,
+   "type": "tilelayer",
+   "visible": true,
+   "width": 18,
+   "x": 0,
+   "y": 0
+  },
+  {
+   "data": [
+    41,
+    41,
+    41,
+    41,
+    41,
+    41,
+    41,
+    41,
+    43,
+    43,
+    41,
+    41,
+    41,
+    41,
+    41,
+    41,
+    41,
+    41,
+    42,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    42,
+    42,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    42,
+    42,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    42,
+    42,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    42,
+    42,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    42,
+    42,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    42,
+    42,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    42,
+    42,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    42,
+    42,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    42,
+    42,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    42,
+    42,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    42,
+    42,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    42,
+    42,
+    42,
+    42,
+    42,
+    42,
+    42,
+    42,
+    42,
+    42,
+    0,
+    42,
+    42,
+    42,
+    42,
+    42,
+    42,
+    42,
+    42
+   ],
+   "height": 14,
+   "id": 2,
+   "name": "decor",
+   "opacity": 1,
+   "type": "tilelayer",
+   "visible": true,
+   "width": 18,
+   "x": 0,
+   "y": 0
+  },
+  {
+   "draworder": "topdown",
+   "id": 3,
+   "name": "objects",
+   "objects": [
+    {
+     "height": 0,
+     "id": 1,
+     "name": "spawn",
+     "point": true,
+     "rotation": 0,
+     "type": "spawn",
+     "visible": true,
+     "width": 0,
+     "x": 304.0,
+     "y": 400.0,
+     "properties": []
+    },
+    {
+     "height": 32,
+     "id": 2,
+     "name": "desk_1",
+     "rotation": 0,
+     "type": "interactable",
+     "visible": true,
+     "width": 32,
+     "x": 128,
+     "y": 128,
+     "properties": [
+      {
+       "name": "kind",
+       "type": "string",
+       "value": "focus_pod"
+      },
+      {
+       "name": "blocks",
+       "type": "bool",
+       "value": true
+      },
+      {
+       "name": "sprite",
+       "type": "string",
+       "value": "obj_desk"
+      },
+      {
+       "name": "text",
+       "type": "string",
+       "value": "A desk. Sitting down starts your timer and shows the room you are working."
+      }
+     ]
+    },
+    {
+     "height": 32,
+     "id": 3,
+     "name": "desk_2",
+     "rotation": 0,
+     "type": "interactable",
+     "visible": true,
+     "width": 32,
+     "x": 416,
+     "y": 128,
+     "properties": [
+      {
+       "name": "kind",
+       "type": "string",
+       "value": "focus_pod"
+      },
+      {
+       "name": "blocks",
+       "type": "bool",
+       "value": true
+      },
+      {
+       "name": "sprite",
+       "type": "string",
+       "value": "obj_desk"
+      },
+      {
+       "name": "text",
+       "type": "string",
+       "value": "A desk. Sitting down starts your timer and shows the room you are working."
+      }
+     ]
+    },
+    {
+     "height": 32,
+     "id": 4,
+     "name": "desk_3",
+     "rotation": 0,
+     "type": "interactable",
+     "visible": true,
+     "width": 32,
+     "x": 128,
+     "y": 288,
+     "properties": [
+      {
+       "name": "kind",
+       "type": "string",
+       "value": "focus_pod"
+      },
+      {
+       "name": "blocks",
+       "type": "bool",
+       "value": true
+      },
+      {
+       "name": "sprite",
+       "type": "string",
+       "value": "obj_desk"
+      },
+      {
+       "name": "text",
+       "type": "string",
+       "value": "A desk. Sitting down starts your timer and shows the room you are working."
+      }
+     ]
+    },
+    {
+     "height": 32,
+     "id": 5,
+     "name": "desk_4",
+     "rotation": 0,
+     "type": "interactable",
+     "visible": true,
+     "width": 32,
+     "x": 416,
+     "y": 288,
+     "properties": [
+      {
+       "name": "kind",
+       "type": "string",
+       "value": "focus_pod"
+      },
+      {
+       "name": "blocks",
+       "type": "bool",
+       "value": true
+      },
+      {
+       "name": "sprite",
+       "type": "string",
+       "value": "obj_desk"
+      },
+      {
+       "name": "text",
+       "type": "string",
+       "value": "A desk. Sitting down starts your timer and shows the room you are working."
+      }
+     ]
+    },
+    {
+     "height": 32,
+     "id": 6,
+     "name": "shared_timer",
+     "rotation": 0,
+     "type": "interactable",
+     "visible": true,
+     "width": 32,
+     "x": 288,
+     "y": 64,
+     "properties": [
+      {
+       "name": "kind",
+       "type": "string",
+       "value": "focus_pod"
+      },
+      {
+       "name": "blocks",
+       "type": "bool",
+       "value": true
+      },
+      {
+       "name": "sprite",
+       "type": "string",
+       "value": "obj_shared_timer"
+      },
+      {
+       "name": "text",
+       "type": "string",
+       "value": "The shared timer. Whoever starts it, everyone in the room runs the same clock."
+      }
+     ]
+    },
+    {
+     "height": 32,
+     "id": 7,
+     "name": "door_town_square",
+     "rotation": 0,
+     "type": "interactable",
+     "visible": true,
+     "width": 32,
+     "x": 288,
+     "y": 416,
+     "properties": [
+      {
+       "name": "kind",
+       "type": "string",
+       "value": "door"
+      },
+      {
+       "name": "blocks",
+       "type": "bool",
+       "value": false
+      },
+      {
+       "name": "targetZone",
+       "type": "string",
+       "value": "town_square"
+      },
+      {
+       "name": "label",
+       "type": "string",
+       "value": "OUT"
+      }
+     ]
+    }
+   ],
+   "opacity": 1,
+   "type": "objectgroup",
+   "visible": true,
+   "x": 0,
+   "y": 0
+  }
+ ],
+ "nextlayerid": 4,
+ "nextobjectid": 8,
+ "orientation": "orthogonal",
+ "renderorder": "right-down",
+ "tiledversion": "1.10.2",
+ "tileheight": 32,
+ "tilesets": [
+  {
+   "columns": 8,
+   "firstgid": 1,
+   "image": "../tilesets/commons_city.png",
+   "imageheight": 224,
+   "imagewidth": 256,
+   "margin": 0,
+   "name": "commons_city",
+   "spacing": 0,
+   "tilecount": 56,
+   "tileheight": 32,
+   "tilewidth": 32,
+   "tiles": [
+    {
+     "id": 1,
+     "properties": [
+      {
+       "name": "ambient",
+       "type": "string",
+       "value": "grassSway"
+      }
+     ]
+    },
+    {
+     "id": 8,
+     "properties": [
+      {
+       "name": "collides",
+       "type": "bool",
+       "value": true
+      }
+     ]
+    },
+    {
+     "id": 9,
+     "properties": [
+      {
+       "name": "collides",
+       "type": "bool",
+       "value": true
+      },
+      {
+       "name": "ambient",
+       "type": "string",
+       "value": "waterShimmer"
+      }
+     ]
+    },
+    {
+     "id": 10,
+     "properties": [
+      {
+       "name": "collides",
+       "type": "bool",
+       "value": true
+      }
+     ]
+    },
+    {
+     "id": 16,
+     "properties": [
+      {
+       "name": "collides",
+       "type": "bool",
+       "value": true
+      }
+     ]
+    },
+    {
+     "id": 17,
+     "properties": [
+      {
+       "name": "collides",
+       "type": "bool",
+       "value": true
+      }
+     ]
+    },
+    {
+     "id": 18,
+     "properties": [
+      {
+       "name": "collides",
+       "type": "bool",
+       "value": true
+      },
+      {
+       "name": "ambient",
+       "type": "string",
+       "value": "windowFlicker"
+      }
+     ]
+    },
+    {
+     "id": 19,
+     "properties": [
+      {
+       "name": "collides",
+       "type": "bool",
+       "value": true
+      }
+     ]
+    },
+    {
+     "id": 20,
+     "properties": [
+      {
+       "name": "collides",
+       "type": "bool",
+       "value": true
+      }
+     ]
+    },
+    {
+     "id": 22,
+     "properties": [
+      {
+       "name": "collides",
+       "type": "bool",
+       "value": true
+      }
+     ]
+    },
+    {
+     "id": 23,
+     "properties": [
+      {
+       "name": "collides",
+       "type": "bool",
+       "value": true
+      }
+     ]
+    },
+    {
+     "id": 24,
+     "properties": [
+      {
+       "name": "collides",
+       "type": "bool",
+       "value": true
+      }
+     ]
+    },
+    {
+     "id": 25,
+     "properties": [
+      {
+       "name": "collides",
+       "type": "bool",
+       "value": true
+      }
+     ]
+    },
+    {
+     "id": 26,
+     "properties": [
+      {
+       "name": "collides",
+       "type": "bool",
+       "value": true
+      }
+     ]
+    },
+    {
+     "id": 27,
+     "properties": [
+      {
+       "name": "collides",
+       "type": "bool",
+       "value": true
+      }
+     ]
+    },
+    {
+     "id": 28,
+     "properties": [
+      {
+       "name": "collides",
+       "type": "bool",
+       "value": true
+      }
+     ]
+    },
+    {
+     "id": 29,
+     "properties": [
+      {
+       "name": "collides",
+       "type": "bool",
+       "value": true
+      }
+     ]
+    },
+    {
+     "id": 30,
+     "properties": [
+      {
+       "name": "ambient",
+       "type": "string",
+       "value": "grassSway"
+      }
+     ]
+    },
+    {
+     "id": 31,
+     "properties": [
+      {
+       "name": "collides",
+       "type": "bool",
+       "value": true
+      }
+     ]
+    },
+    {
+     "id": 40,
+     "properties": [
+      {
+       "name": "collides",
+       "type": "bool",
+       "value": true
+      }
+     ]
+    },
+    {
+     "id": 41,
+     "properties": [
+      {
+       "name": "collides",
+       "type": "bool",
+       "value": true
+      }
+     ]
+    },
+    {
+     "id": 42,
+     "properties": [
+      {
+       "name": "collides",
+       "type": "bool",
+       "value": true
+      }
+     ]
+    },
+    {
+     "id": 43,
+     "properties": [
+      {
+       "name": "collides",
+       "type": "bool",
+       "value": true
+      }
+     ]
+    },
+    {
+     "id": 44,
+     "properties": [
+      {
+       "name": "collides",
+       "type": "bool",
+       "value": true
+      }
+     ]
+    },
+    {
+     "id": 45,
+     "properties": [
+      {
+       "name": "collides",
+       "type": "bool",
+       "value": true
+      }
+     ]
+    },
+    {
+     "id": 46,
+     "properties": [
+      {
+       "name": "collides",
+       "type": "bool",
+       "value": true
+      }
+     ]
+    },
+    {
+     "id": 47,
+     "properties": [
+      {
+       "name": "collides",
+       "type": "bool",
+       "value": true
+      },
+      {
+       "name": "ambient",
+       "type": "string",
+       "value": "windowFlicker"
+      }
+     ]
+    },
+    {
+     "id": 49,
+     "properties": [
+      {
+       "name": "collides",
+       "type": "bool",
+       "value": true
+      },
+      {
+       "name": "ambient",
+       "type": "string",
+       "value": "waterShimmer"
+      }
+     ]
+    },
+    {
+     "id": 51,
+     "properties": [
+      {
+       "name": "collides",
+       "type": "bool",
+       "value": true
+      }
+     ]
+    },
+    {
+     "id": 52,
+     "properties": [
+      {
+       "name": "collides",
+       "type": "bool",
+       "value": true
+      }
+     ]
+    },
+    {
+     "id": 54,
+     "properties": [
+      {
+       "name": "collides",
+       "type": "bool",
+       "value": true
+      }
+     ]
+    }
+   ]
+  }
+ ],
+ "tilewidth": 32,
+ "type": "map",
+ "version": "1.10",
+ "width": 18
+}

@@ -23,6 +23,9 @@ import {
   type InteractionContext,
 } from './InteractableRegistry';
 
+/** The parts of an InteractionContext that ZoneScene owns. */
+export type InteractionHooks = Omit<InteractionContext, 'scene' | 'zone' | 'object'>;
+
 const TILE = SPACING.tile;
 
 export class InteractionSystem {
@@ -35,11 +38,11 @@ export class InteractionSystem {
     private readonly scene: Phaser.Scene,
     private readonly zone: ZoneConfig,
     private readonly zoneMap: ZoneMap,
-    private readonly setBlocked: (blocked: boolean) => void,
+    private readonly hooks: InteractionHooks,
   ) {}
 
   private context(object: InteractableObject): InteractionContext {
-    return { scene: this.scene, zone: this.zone, object, setBlocked: this.setBlocked };
+    return { scene: this.scene, zone: this.zone, object, ...this.hooks };
   }
 
   /** Space. Returns true if something handled the press. */

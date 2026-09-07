@@ -30,6 +30,17 @@ export const ASSET_KEYS = {
   door: 'obj_door',
   interactBubble: 'ui_interact_bubble',
   shadow: 'fx_shadow',
+  // Interactable props. Each is 32 wide and taller than a tile, drawn with its
+  // feet on the tile it occupies.
+  focusPod: 'obj_focus_pod',
+  seat: 'obj_seat',
+  readingNook: 'obj_reading_nook',
+  jukebox: 'obj_jukebox',
+  cabinet: 'obj_cabinet',
+  cabinetLit: 'obj_cabinet_lit',
+  desk: 'obj_desk',
+  sharedTimer: 'obj_shared_timer',
+  bandstand: 'obj_bandstand',
 } as const;
 
 /**
@@ -73,10 +84,37 @@ export const TILE_INDEX = {
   lamp: 29,
   flowerbed: 30,
   bollard: 31,
+  // row 4 - interior floors
+  woodFloor: 32,
+  woodFloorDark: 33,
+  carpet: 34,
+  tileFloor: 35,
+  tileFloorAlt: 36,
+  arcadeFloor: 37,
+  studyFloor: 38,
+  stageFloor: 39,
+  // row 5 - interior structure
+  wallInterior: 40,
+  wallSkirting: 41,
+  windowInterior: 42,
+  counterFront: 43,
+  counterTop: 44,
+  bookshelf: 45,
+  shelfLow: 46,
+  neonStrip: 47,
+  // row 6 - park & misc
+  pathDirt: 48,
+  pond: 49,
+  pondEdge: 50,
+  picnicTable: 51,
+  fence: 52,
+  rug: 53,
+  chalkboard: 54,
+  kitchenTile: 55,
 } as const;
 
 export const TILESET_COLUMNS = 8;
-export const TILESET_ROWS = 4;
+export const TILESET_ROWS = 7;
 export const TILE_COUNT = TILESET_COLUMNS * TILESET_ROWS;
 
 /** Character sheet layout: 4 directions x 4 frames, 32x64 each. */
@@ -656,7 +694,324 @@ set(TILE_INDEX.bollard, (ctx, ox, oy) => {
   rect(ctx, ox + 12, oy + 15, 8, 2, COLORS.hudAccent);
 });
 
-/** Draws the whole tileset into one texture, 8 columns x 4 rows. */
+// ---- row 4: interior floors ----------------------------------------------
+
+/** Plank flooring with a running bond, used across the Library and Study Rooms. */
+function drawPlanks(ctx: Ctx, ox: number, oy: number, base: string, offset: number) {
+  vGradient(ctx, ox, oy, mix(base, '#FFFFFF', 0.12), base);
+  grain(ctx, ox, oy, mix(base, '#000000', 0.3), 137, 26, 0.2);
+  for (let i = 0; i < 4; i += 1) {
+    const y = oy + i * 8;
+    rect(ctx, ox, y, T, 1, mix(base, '#000000', 0.35));
+    ctx.globalAlpha = 0.35;
+    rect(ctx, ox, y + 1, T, 1, mix(base, '#FFFFFF', 0.45));
+    ctx.globalAlpha = 1;
+    // staggered butt joint
+    const jx = (i % 2 === 0 ? offset : offset + 16) % T;
+    rect(ctx, ox + jx, y, 1, 8, mix(base, '#000000', 0.3));
+  }
+}
+
+set(TILE_INDEX.woodFloor, (ctx, ox, oy) =>
+  drawPlanks(ctx, ox, oy, mix(COLORS.benchWood, '#D8B78A', 0.45), 6));
+set(TILE_INDEX.woodFloorDark, (ctx, ox, oy) =>
+  drawPlanks(ctx, ox, oy, mix(COLORS.benchWood, '#000000', 0.28), 18));
+
+set(TILE_INDEX.carpet, (ctx, ox, oy) => {
+  const base = mix(COLORS.statusListening, '#000000', 0.25);
+  vGradient(ctx, ox, oy, mix(base, '#FFFFFF', 0.12), base);
+  const rng = makeRng(151);
+  ctx.globalAlpha = 0.16;
+  for (let i = 0; i < 70; i += 1) {
+    ctx.fillStyle = rng() > 0.5 ? '#FFFFFF' : '#000000';
+    ctx.fillRect(ox + Math.floor(rng() * T), oy + Math.floor(rng() * T), 2, 1);
+  }
+  ctx.globalAlpha = 1;
+});
+
+function drawCheckerTile(ctx: Ctx, ox: number, oy: number, a: string, b: string) {
+  vGradient(ctx, ox, oy, mix(a, '#FFFFFF', 0.15), a);
+  ctx.fillStyle = b;
+  ctx.fillRect(ox, oy, 16, 16);
+  ctx.fillRect(ox + 16, oy + 16, 16, 16);
+  ctx.globalAlpha = 0.35;
+  rect(ctx, ox, oy, T, 1, mix(a, '#FFFFFF', 0.5));
+  rect(ctx, ox, oy + 16, T, 1, mix(a, '#000000', 0.25));
+  rect(ctx, ox, oy, 1, T, mix(a, '#000000', 0.2));
+  rect(ctx, ox + 16, oy, 1, T, mix(a, '#000000', 0.2));
+  ctx.globalAlpha = 1;
+  // gloss sweep
+  ctx.globalAlpha = 0.12;
+  ctx.fillStyle = '#FFFFFF';
+  ctx.beginPath();
+  ctx.moveTo(ox, oy + T);
+  ctx.lineTo(ox + T, oy);
+  ctx.lineTo(ox + T, oy + 8);
+  ctx.lineTo(ox + 8, oy + T);
+  ctx.closePath();
+  ctx.fill();
+  ctx.globalAlpha = 1;
+}
+
+// Low-contrast checker. A strong two-tone chequerboard at this tile size
+// vibrates across a whole floor and fights everything standing on it.
+set(TILE_INDEX.tileFloor, (ctx, ox, oy) =>
+  drawCheckerTile(ctx, ox, oy, COLORS.dialogueBoxBg, mix(COLORS.cafeBg, '#FFFFFF', 0.72)));
+set(TILE_INDEX.tileFloorAlt, (ctx, ox, oy) =>
+  drawCheckerTile(ctx, ox, oy, mix(COLORS.cafeBg, '#FFFFFF', 0.5), mix(COLORS.benchWood, '#FFFFFF', 0.35)));
+
+set(TILE_INDEX.arcadeFloor, (ctx, ox, oy) => {
+  const base = mix(COLORS.arcadeBg, '#000000', 0.55);
+  vGradient(ctx, ox, oy, mix(base, '#FFFFFF', 0.1), base);
+  // neon grid, the arcade's whole visual identity
+  ctx.globalAlpha = 0.5;
+  rect(ctx, ox, oy, T, 1, COLORS.dialogueBoxAccent);
+  rect(ctx, ox, oy, 1, T, COLORS.dialogueBoxAccent);
+  ctx.globalAlpha = 0.16;
+  rect(ctx, ox, oy + 1, T, 1, COLORS.dialogueBoxAccent);
+  rect(ctx, ox + 1, oy, 1, T, COLORS.dialogueBoxAccent);
+  ctx.globalAlpha = 1;
+  grain(ctx, ox, oy, COLORS.interactBubbleMark, 163, 8, 0.18);
+});
+
+set(TILE_INDEX.studyFloor, (ctx, ox, oy) => {
+  const base = mix(COLORS.concrete, COLORS.libraryBg, 0.35);
+  vGradient(ctx, ox, oy, mix(base, '#FFFFFF', 0.14), base);
+  grain(ctx, ox, oy, mix(base, '#000000', 0.25), 173, 30, 0.16);
+  ctx.globalAlpha = 0.3;
+  rect(ctx, ox, oy, T, 1, mix(base, '#000000', 0.2));
+  rect(ctx, ox, oy, 1, T, mix(base, '#000000', 0.2));
+  ctx.globalAlpha = 1;
+});
+
+set(TILE_INDEX.stageFloor, (ctx, ox, oy) => {
+  drawPlanks(ctx, ox, oy, mix(COLORS.benchWood, '#E0C39A', 0.55), 10);
+  ctx.globalAlpha = 0.16;
+  ctx.fillStyle = COLORS.lampGlow;
+  ctx.fillRect(ox, oy, T, T);
+  ctx.globalAlpha = 1;
+});
+
+// ---- row 5: interior structure -------------------------------------------
+
+function drawInteriorWall(ctx: Ctx, ox: number, oy: number, skirting: boolean) {
+  const base = mix(COLORS.concreteLight, COLORS.libraryBg, 0.2);
+  vGradient(ctx, ox, oy, mix(base, '#FFFFFF', 0.2), base);
+  grain(ctx, ox, oy, mix(base, '#000000', 0.15), 181, 20, 0.14);
+  rect(ctx, ox, oy, T, 2, mix(base, '#FFFFFF', 0.4));
+  if (skirting) {
+    rect(ctx, ox, oy + T - 7, T, 7, mix(COLORS.benchWood, '#000000', 0.2));
+    rect(ctx, ox, oy + T - 7, T, 1, mix(COLORS.benchWood, '#FFFFFF', 0.35));
+  }
+}
+
+set(TILE_INDEX.wallInterior, (ctx, ox, oy) => drawInteriorWall(ctx, ox, oy, false));
+set(TILE_INDEX.wallSkirting, (ctx, ox, oy) => drawInteriorWall(ctx, ox, oy, true));
+
+set(TILE_INDEX.windowInterior, (ctx, ox, oy) => {
+  drawInteriorWall(ctx, ox, oy, false);
+  rect(ctx, ox + 2, oy + 4, T - 4, T - 12, mix(COLORS.benchWood, '#000000', 0.15));
+  // daylight beyond
+  const gradient = ctx.createLinearGradient(ox, oy + 6, ox, oy + T - 10);
+  gradient.addColorStop(0, mix(COLORS.glassLight, '#FFFFFF', 0.55));
+  gradient.addColorStop(1, mix(COLORS.grassLight, '#FFFFFF', 0.3));
+  ctx.fillStyle = gradient;
+  ctx.fillRect(ox + 4, oy + 6, T - 8, T - 16);
+  rect(ctx, ox + 15, oy + 6, 2, T - 16, mix(COLORS.benchWood, '#000000', 0.2));
+  rect(ctx, ox + 4, oy + 14, T - 8, 1, mix(COLORS.benchWood, '#000000', 0.2));
+  rect(ctx, ox + 2, oy + T - 9, T - 4, 3, mix(COLORS.benchWood, '#FFFFFF', 0.25));
+});
+
+set(TILE_INDEX.counterFront, (ctx, ox, oy) => {
+  const wood = mix(COLORS.benchWood, '#000000', 0.15);
+  vGradient(ctx, ox, oy, mix(wood, '#FFFFFF', 0.2), wood);
+  for (let i = 0; i < 2; i += 1) {
+    const px = ox + 3 + i * 14;
+    ctx.globalAlpha = 0.35;
+    rect(ctx, px, oy + 6, 12, T - 12, mix(wood, '#000000', 0.35));
+    ctx.globalAlpha = 0.5;
+    rect(ctx, px, oy + 6, 12, 1, mix(wood, '#FFFFFF', 0.4));
+    ctx.globalAlpha = 1;
+  }
+  rect(ctx, ox, oy, T, 3, mix(wood, '#FFFFFF', 0.45));
+});
+
+set(TILE_INDEX.counterTop, (ctx, ox, oy) => {
+  const stone = mix(COLORS.concreteDark, '#000000', 0.15);
+  vGradient(ctx, ox, oy, mix(stone, '#FFFFFF', 0.35), stone);
+  grain(ctx, ox, oy, mix(stone, '#FFFFFF', 0.5), 191, 22, 0.3);
+  rect(ctx, ox, oy, T, 2, mix(stone, '#FFFFFF', 0.55));
+  rect(ctx, ox, oy + T - 3, T, 3, mix(stone, '#000000', 0.4));
+});
+
+set(TILE_INDEX.bookshelf, (ctx, ox, oy) => {
+  const wood = mix(COLORS.benchWood, '#000000', 0.35);
+  vGradient(ctx, ox, oy, mix(wood, '#FFFFFF', 0.15), wood);
+  const spines = [
+    COLORS.interactBubbleMark, COLORS.statusListening, COLORS.statusStudying,
+    COLORS.flowerYellow, COLORS.npcBody, COLORS.remoteBody,
+  ];
+  const rng = makeRng(199);
+  for (let shelf = 0; shelf < 3; shelf += 1) {
+    const sy = oy + 2 + shelf * 10;
+    let x = ox + 2;
+    while (x < ox + T - 3) {
+      const w = 2 + Math.floor(rng() * 3);
+      const h = 6 + Math.floor(rng() * 2);
+      ctx.fillStyle = spines[Math.floor(rng() * spines.length)]!;
+      ctx.fillRect(x, sy + (8 - h), w, h);
+      ctx.globalAlpha = 0.35;
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillRect(x, sy + (8 - h), 1, h);
+      ctx.globalAlpha = 1;
+      x += w + 1;
+    }
+    rect(ctx, ox, sy + 8, T, 2, mix(wood, '#FFFFFF', 0.3));
+  }
+  rect(ctx, ox, oy, 2, T, mix(wood, '#FFFFFF', 0.2));
+  rect(ctx, ox + T - 2, oy, 2, T, mix(wood, '#000000', 0.3));
+});
+
+set(TILE_INDEX.shelfLow, (ctx, ox, oy) => {
+  const wood = mix(COLORS.benchWood, '#000000', 0.2);
+  vGradient(ctx, ox, oy, mix(COLORS.libraryBg, '#FFFFFF', 0.3), mix(COLORS.libraryBg, '#FFFFFF', 0.1));
+  shadowEllipse(ctx, ox + 16, oy + 29, 13, 3);
+  rect(ctx, ox, oy + 12, T, 17, wood);
+  rect(ctx, ox, oy + 12, T, 2, mix(wood, '#FFFFFF', 0.4));
+  const spines = [COLORS.interactBubbleMark, COLORS.statusStudying, COLORS.flowerYellow];
+  const rng = makeRng(211);
+  let x = ox + 2;
+  while (x < ox + T - 3) {
+    const w = 2 + Math.floor(rng() * 3);
+    ctx.fillStyle = spines[Math.floor(rng() * spines.length)]!;
+    ctx.fillRect(x, oy + 16, w, 7);
+    x += w + 1;
+  }
+  rect(ctx, ox, oy + 23, T, 2, mix(wood, '#FFFFFF', 0.25));
+});
+
+set(TILE_INDEX.neonStrip, (ctx, ox, oy) => {
+  const base = mix(COLORS.arcadeBg, '#000000', 0.4);
+  vGradient(ctx, ox, oy, base, mix(base, '#000000', 0.35));
+  // glowing tube with falloff
+  ctx.globalAlpha = 0.25;
+  ctx.fillStyle = COLORS.interactBubbleMark;
+  ctx.fillRect(ox, oy + 8, T, 16);
+  ctx.globalAlpha = 0.6;
+  ctx.fillRect(ox, oy + 13, T, 6);
+  ctx.globalAlpha = 1;
+  rect(ctx, ox, oy + 15, T, 2, mix(COLORS.interactBubbleMark, '#FFFFFF', 0.7));
+});
+
+// ---- row 6: park & misc ---------------------------------------------------
+
+set(TILE_INDEX.pathDirt, (ctx, ox, oy) => {
+  const base = mix(COLORS.soil, COLORS.paving, 0.45);
+  vGradient(ctx, ox, oy, mix(base, '#FFFFFF', 0.15), base);
+  grain(ctx, ox, oy, mix(base, '#000000', 0.3), 223, 44, 0.35);
+  grain(ctx, ox, oy, mix(base, '#FFFFFF', 0.35), 227, 26, 0.3);
+});
+
+set(TILE_INDEX.pond, (ctx, ox, oy) => {
+  vGradient(ctx, ox, oy, mix(COLORS.water, COLORS.foliage, 0.25), COLORS.waterDeep);
+  const rng = makeRng(229);
+  ctx.globalAlpha = 0.2;
+  for (let i = 0; i < 4; i += 1) {
+    ctx.fillStyle = COLORS.waterLight;
+    ctx.beginPath();
+    ctx.ellipse(ox + rng() * T, oy + rng() * T, 6 + rng() * 7, 3 + rng() * 3, rng() * Math.PI, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  // No lily pad here on purpose: every pond tile draws the same texture, so a
+  // distinctive feature repeats on a perfect grid and the water reads as
+  // wallpaper. Distinct features belong in the map as objects, not in the tile.
+});
+
+set(TILE_INDEX.pondEdge, (ctx, ox, oy) => {
+  drawGrassBase(ctx, ox, oy, 233);
+  ctx.globalAlpha = 0.75;
+  ctx.fillStyle = mix(COLORS.soil, COLORS.grassDark, 0.4);
+  ctx.fillRect(ox, oy + 20, T, 12);
+  ctx.globalAlpha = 1;
+  const rng = makeRng(239);
+  for (let i = 0; i < 5; i += 1) {
+    ctx.fillStyle = COLORS.pavingDark;
+    ctx.beginPath();
+    ctx.ellipse(ox + rng() * T, oy + 24 + rng() * 6, 2 + rng() * 2, 1.5 + rng(), 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+});
+
+set(TILE_INDEX.picnicTable, (ctx, ox, oy) => {
+  drawGrassBase(ctx, ox, oy, 241);
+  shadowEllipse(ctx, ox + 16, oy + 28, 14, 3.5);
+  const wood = COLORS.benchWood;
+  rect(ctx, ox + 1, oy + 20, T - 2, 4, mix(wood, '#000000', 0.25));
+  rect(ctx, ox + 1, oy + 8, T - 2, 4, mix(wood, '#000000', 0.25));
+  rect(ctx, ox + 3, oy + 12, T - 6, 8, mix(wood, '#FFFFFF', 0.2));
+  rect(ctx, ox + 3, oy + 12, T - 6, 1, mix(wood, '#FFFFFF', 0.5));
+  for (let i = 0; i < 3; i += 1) rect(ctx, ox + 5 + i * 8, oy + 13, 1, 6, mix(wood, '#000000', 0.3));
+  rect(ctx, ox + 7, oy + 20, 2, 6, mix(wood, '#000000', 0.4));
+  rect(ctx, ox + 23, oy + 20, 2, 6, mix(wood, '#000000', 0.4));
+});
+
+set(TILE_INDEX.fence, (ctx, ox, oy) => {
+  drawGrassBase(ctx, ox, oy, 251);
+  const wood = mix(COLORS.benchWood, '#FFFFFF', 0.1);
+  rect(ctx, ox, oy + 10, T, 3, wood);
+  rect(ctx, ox, oy + 18, T, 3, wood);
+  rect(ctx, ox, oy + 10, T, 1, mix(wood, '#FFFFFF', 0.4));
+  rect(ctx, ox + 4, oy + 6, 4, 22, mix(wood, '#000000', 0.2));
+  rect(ctx, ox + 24, oy + 6, 4, 22, mix(wood, '#000000', 0.2));
+  rect(ctx, ox + 4, oy + 6, 1, 22, mix(wood, '#FFFFFF', 0.3));
+});
+
+set(TILE_INDEX.rug, (ctx, ox, oy) => {
+  // Muted well below the accent colour: at full saturation a rug tile reads as
+  // a crate sitting on the floor rather than something woven into it.
+  const base = mix(COLORS.interactBubbleMark, '#5A4638', 0.55);
+  vGradient(ctx, ox, oy, mix(base, '#FFFFFF', 0.15), base);
+  ctx.globalAlpha = 0.5;
+  rect(ctx, ox + 3, oy + 3, T - 6, 1, COLORS.flowerYellow);
+  rect(ctx, ox + 3, oy + T - 4, T - 6, 1, COLORS.flowerYellow);
+  rect(ctx, ox + 3, oy + 3, 1, T - 6, COLORS.flowerYellow);
+  rect(ctx, ox + T - 4, oy + 3, 1, T - 6, COLORS.flowerYellow);
+  ctx.globalAlpha = 0.25;
+  for (let i = 0; i < 4; i += 1) rect(ctx, ox + 7 + i * 5, oy + 8, 2, T - 16, COLORS.flowerYellow);
+  ctx.globalAlpha = 1;
+});
+
+set(TILE_INDEX.chalkboard, (ctx, ox, oy) => {
+  drawInteriorWall(ctx, ox, oy, false);
+  const board = mix(COLORS.statusStudying, '#000000', 0.55);
+  rect(ctx, ox + 2, oy + 3, T - 4, T - 12, mix(COLORS.benchWood, '#000000', 0.2));
+  rect(ctx, ox + 4, oy + 5, T - 8, T - 16, board);
+  ctx.globalAlpha = 0.55;
+  rect(ctx, ox + 7, oy + 9, 14, 1, '#FFFFFF');
+  rect(ctx, ox + 7, oy + 13, 18, 1, '#FFFFFF');
+  rect(ctx, ox + 7, oy + 17, 10, 1, '#FFFFFF');
+  ctx.globalAlpha = 1;
+  rect(ctx, ox + 2, oy + T - 9, T - 4, 3, mix(COLORS.benchWood, '#FFFFFF', 0.2));
+});
+
+set(TILE_INDEX.kitchenTile, (ctx, ox, oy) => {
+  const base = mix(COLORS.concreteLight, '#FFFFFF', 0.3);
+  vGradient(ctx, ox, oy, mix(base, '#FFFFFF', 0.2), base);
+  for (let ty = 0; ty < 4; ty += 1) {
+    for (let tx = 0; tx < 4; tx += 1) {
+      ctx.globalAlpha = 0.22;
+      rect(ctx, ox + tx * 8, oy + ty * 8, 8, 1, COLORS.concreteDark);
+      rect(ctx, ox + tx * 8, oy + ty * 8, 1, 8, COLORS.concreteDark);
+      ctx.globalAlpha = 1;
+    }
+  }
+  ctx.globalAlpha = 0.14;
+  ctx.fillStyle = COLORS.cafeBg;
+  ctx.fillRect(ox, oy, T, T);
+  ctx.globalAlpha = 1;
+});
+
+/** Draws the whole tileset into one texture, 8 columns x 7 rows. */
 export function generateTileset(scene: Phaser.Scene): void {
   const width = T * TILESET_COLUMNS;
   const height = T * TILESET_ROWS;
@@ -894,6 +1249,278 @@ export function generateObjectSprites(scene: Phaser.Scene): void {
   }
 }
 
+/**
+ * Interactable props.
+ *
+ * Drawn 32x48 (or 32x56) rather than a flat tile so they have visible height —
+ * a focus pod you can see the chair and monitor of reads as somewhere to sit,
+ * where a coloured square does not.
+ */
+export function generateInteractableSprites(scene: Phaser.Scene): void {
+  const prop = (key: string, height: number, draw: (ctx: Ctx) => void) => {
+    const texture = createCanvas(scene, key, T, height);
+    const ctx = texture.getContext();
+    ctx.imageSmoothingEnabled = false;
+    draw(ctx);
+    texture.refresh();
+  };
+
+  // --- focus pod: desk, monitor, task lamp, chair ---
+  prop(ASSET_KEYS.focusPod, 48, (ctx) => {
+    shadowEllipse(ctx, 16, 46, 13, 3.5);
+    const wood = mix(COLORS.benchWood, '#000000', 0.1);
+    // privacy screen
+    rect(ctx, 2, 4, 28, 16, mix(COLORS.statusListening, '#000000', 0.35));
+    rect(ctx, 2, 4, 28, 2, mix(COLORS.statusListening, '#FFFFFF', 0.25));
+    // desk top + legs
+    rect(ctx, 1, 22, 30, 6, mix(wood, '#FFFFFF', 0.25));
+    rect(ctx, 1, 22, 30, 1, mix(wood, '#FFFFFF', 0.55));
+    rect(ctx, 3, 28, 3, 14, mix(wood, '#000000', 0.3));
+    rect(ctx, 26, 28, 3, 14, mix(wood, '#000000', 0.3));
+    // monitor
+    rect(ctx, 9, 8, 14, 11, COLORS.storefront);
+    rect(ctx, 10, 9, 12, 9, mix(COLORS.glassLight, '#000000', 0.15));
+    ctx.globalAlpha = 0.5;
+    rect(ctx, 11, 10, 4, 7, '#FFFFFF');
+    ctx.globalAlpha = 1;
+    rect(ctx, 14, 19, 4, 3, COLORS.steel);
+    // task lamp
+    rect(ctx, 25, 12, 2, 10, COLORS.lampPost);
+    rect(ctx, 23, 9, 6, 3, COLORS.lampPost);
+    ctx.globalAlpha = 0.35;
+    ctx.fillStyle = COLORS.lampGlow;
+    ctx.beginPath();
+    ctx.ellipse(26, 20, 8, 6, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    // chair back
+    rect(ctx, 11, 30, 10, 10, mix(COLORS.statusListening, '#000000', 0.2));
+    rect(ctx, 11, 30, 10, 2, mix(COLORS.statusListening, '#FFFFFF', 0.3));
+  });
+
+  // --- cafe seat: small round table with a chair ---
+  prop(ASSET_KEYS.seat, 48, (ctx) => {
+    shadowEllipse(ctx, 16, 45, 12, 3.5);
+    const wood = COLORS.benchWood;
+    // chair
+    rect(ctx, 9, 14, 14, 12, mix(wood, '#000000', 0.25));
+    rect(ctx, 9, 14, 14, 2, mix(wood, '#FFFFFF', 0.3));
+    rect(ctx, 8, 26, 16, 5, mix(wood, '#FFFFFF', 0.15));
+    rect(ctx, 10, 31, 3, 10, mix(wood, '#000000', 0.35));
+    rect(ctx, 19, 31, 3, 10, mix(wood, '#000000', 0.35));
+    // cup on the table edge
+    rect(ctx, 14, 9, 5, 5, COLORS.dialogueBoxBg);
+    rect(ctx, 14, 9, 5, 1, mix(COLORS.cafeBg, '#FFFFFF', 0.4));
+    ctx.globalAlpha = 0.45;
+    rect(ctx, 15, 6, 1, 3, '#FFFFFF');
+    rect(ctx, 17, 5, 1, 4, '#FFFFFF');
+    ctx.globalAlpha = 1;
+  });
+
+  // --- reading nook: armchair and a floor lamp ---
+  prop(ASSET_KEYS.readingNook, 52, (ctx) => {
+    shadowEllipse(ctx, 15, 50, 14, 4);
+    const fabric = mix(COLORS.interactBubbleMark, '#000000', 0.3);
+    // floor lamp
+    rect(ctx, 27, 12, 2, 32, COLORS.lampPost);
+    rect(ctx, 24, 44, 8, 3, COLORS.lampPost);
+    rect(ctx, 23, 5, 10, 8, mix(COLORS.lampGlow, '#8A6A2A', 0.35));
+    ctx.globalAlpha = 0.3;
+    ctx.fillStyle = COLORS.lampGlow;
+    ctx.beginPath();
+    ctx.ellipse(28, 18, 12, 12, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    // armchair
+    rect(ctx, 2, 16, 20, 18, fabric);
+    rect(ctx, 2, 16, 20, 2, mix(fabric, '#FFFFFF', 0.3));
+    rect(ctx, 0, 22, 5, 16, mix(fabric, '#000000', 0.25));
+    rect(ctx, 19, 22, 5, 16, mix(fabric, '#000000', 0.25));
+    rect(ctx, 3, 34, 18, 6, mix(fabric, '#FFFFFF', 0.12));
+    rect(ctx, 5, 40, 3, 8, mix(COLORS.benchWood, '#000000', 0.3));
+    rect(ctx, 16, 40, 3, 8, mix(COLORS.benchWood, '#000000', 0.3));
+    // open book on the seat
+    rect(ctx, 8, 32, 9, 4, COLORS.dialogueBoxBg);
+    rect(ctx, 12, 32, 1, 4, COLORS.pavingDark);
+  });
+
+  // --- jukebox ---
+  prop(ASSET_KEYS.jukebox, 52, (ctx) => {
+    shadowEllipse(ctx, 16, 50, 12, 3.5);
+    const body = mix(COLORS.benchWood, '#6B2F2F', 0.45);
+    // domed cabinet
+    ctx.fillStyle = body;
+    ctx.beginPath();
+    ctx.moveTo(4, 48);
+    ctx.lineTo(4, 16);
+    ctx.quadraticCurveTo(16, 2, 28, 16);
+    ctx.lineTo(28, 48);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = mix(body, '#000000', 0.4);
+    ctx.stroke();
+    // lit arch
+    ctx.globalAlpha = 0.75;
+    ctx.fillStyle = COLORS.dialogueBoxAccent;
+    ctx.beginPath();
+    ctx.moveTo(7, 30);
+    ctx.lineTo(7, 18);
+    ctx.quadraticCurveTo(16, 7, 25, 18);
+    ctx.lineTo(25, 30);
+    ctx.closePath();
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    // record window + buttons
+    rect(ctx, 9, 20, 14, 9, mix(COLORS.storefront, '#000000', 0.2));
+    ctx.fillStyle = COLORS.dialogueBoxBg;
+    ctx.beginPath();
+    ctx.arc(16, 24, 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = COLORS.interactBubbleMark;
+    ctx.beginPath();
+    ctx.arc(16, 24, 1.5, 0, Math.PI * 2);
+    ctx.fill();
+    rect(ctx, 7, 33, 18, 8, mix(body, '#000000', 0.3));
+    for (let i = 0; i < 4; i += 1) rect(ctx, 9 + i * 4, 35, 2, 4, COLORS.lampGlow);
+    rect(ctx, 4, 44, 24, 4, mix(body, '#000000', 0.45));
+  });
+
+  // --- arcade cabinet ---
+  const cabinet = (lit: boolean) => (ctx: Ctx) => {
+    shadowEllipse(ctx, 16, 54, 13, 3.5);
+    const body = lit
+      ? mix(COLORS.arcadeBg, '#FFFFFF', 0.12)
+      : mix(COLORS.arcadeBg, '#000000', 0.15);
+    rect(ctx, 3, 6, 26, 46, body);
+    rect(ctx, 3, 6, 26, 2, mix(body, '#FFFFFF', 0.35));
+    rect(ctx, 3, 6, 2, 46, mix(body, '#FFFFFF', 0.2));
+    rect(ctx, 27, 6, 2, 46, mix(body, '#000000', 0.35));
+    // marquee
+    rect(ctx, 5, 8, 22, 7, mix(COLORS.interactBubbleMark, lit ? '#FFFFFF' : '#000000', 0.2));
+    ctx.globalAlpha = 0.6;
+    rect(ctx, 5, 8, 22, 2, '#FFFFFF');
+    ctx.globalAlpha = 1;
+    // screen
+    rect(ctx, 6, 17, 20, 15, COLORS.storefront);
+    const screen = ctx.createLinearGradient(7, 18, 25, 31);
+    screen.addColorStop(0, lit ? COLORS.dialogueBoxAccent : mix(COLORS.glass, '#000000', 0.35));
+    screen.addColorStop(1, lit ? mix(COLORS.npcBody, '#000000', 0.2) : mix(COLORS.storefront, '#000000', 0.2));
+    ctx.fillStyle = screen;
+    ctx.fillRect(7, 18, 18, 13);
+    if (lit) {
+      ctx.globalAlpha = 0.75;
+      rect(ctx, 10, 27, 3, 2, COLORS.lampGlow);
+      rect(ctx, 19, 22, 2, 2, COLORS.dialogueBoxBg);
+      rect(ctx, 14, 24, 4, 1, COLORS.interactBubbleMark);
+      ctx.globalAlpha = 1;
+    }
+    ctx.globalAlpha = 0.28;
+    ctx.fillStyle = '#FFFFFF';
+    ctx.beginPath();
+    ctx.moveTo(8, 31);
+    ctx.lineTo(16, 18);
+    ctx.lineTo(19, 18);
+    ctx.lineTo(11, 31);
+    ctx.closePath();
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    // control deck
+    rect(ctx, 4, 34, 24, 7, mix(body, '#000000', 0.28));
+    rect(ctx, 4, 34, 24, 1, mix(body, '#FFFFFF', 0.3));
+    rect(ctx, 9, 36, 2, 4, COLORS.steel);
+    ctx.fillStyle = COLORS.interactBubbleMark;
+    ctx.beginPath();
+    ctx.arc(10, 36, 2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = COLORS.dialogueBoxAccent;
+    ctx.beginPath();
+    ctx.arc(18, 38, 1.8, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = COLORS.flowerYellow;
+    ctx.beginPath();
+    ctx.arc(23, 38, 1.8, 0, Math.PI * 2);
+    ctx.fill();
+    rect(ctx, 3, 48, 26, 4, mix(body, '#000000', 0.45));
+  };
+  prop(ASSET_KEYS.cabinet, 56, cabinet(false));
+  prop(ASSET_KEYS.cabinetLit, 56, cabinet(true));
+
+  // --- study desk ---
+  prop(ASSET_KEYS.desk, 44, (ctx) => {
+    shadowEllipse(ctx, 16, 42, 13, 3.5);
+    const wood = mix(COLORS.benchWood, '#FFFFFF', 0.08);
+    rect(ctx, 1, 14, 30, 6, wood);
+    rect(ctx, 1, 14, 30, 1, mix(wood, '#FFFFFF', 0.5));
+    rect(ctx, 3, 20, 3, 18, mix(wood, '#000000', 0.3));
+    rect(ctx, 26, 20, 3, 18, mix(wood, '#000000', 0.3));
+    // laptop
+    rect(ctx, 10, 6, 13, 9, COLORS.steel);
+    rect(ctx, 11, 7, 11, 7, mix(COLORS.glassLight, '#000000', 0.1));
+    rect(ctx, 8, 15, 17, 2, mix(COLORS.steel, '#FFFFFF', 0.25));
+    // notebook + mug
+    rect(ctx, 3, 10, 6, 5, COLORS.dialogueBoxBg);
+    rect(ctx, 25, 9, 4, 5, COLORS.statusStudying);
+  });
+
+  // --- shared timer board ---
+  prop(ASSET_KEYS.sharedTimer, 44, (ctx) => {
+    shadowEllipse(ctx, 16, 42, 9, 3);
+    rect(ctx, 14, 22, 4, 18, COLORS.steel);
+    rect(ctx, 10, 38, 12, 3, COLORS.lampPost);
+    rect(ctx, 2, 2, 28, 22, COLORS.storefront);
+    rect(ctx, 4, 4, 24, 18, mix(COLORS.statusStudying, '#000000', 0.5));
+    // digits
+    ctx.fillStyle = COLORS.lampGlow;
+    for (const dx of [6, 11, 18, 23]) {
+      ctx.fillRect(dx, 8, 3, 10);
+      ctx.fillStyle = mix(COLORS.lampGlow, '#000000', 0.25);
+    }
+    ctx.fillStyle = COLORS.lampGlow;
+    ctx.fillRect(16, 11, 1, 1);
+    ctx.fillRect(16, 15, 1, 1);
+    ctx.globalAlpha = 0.5;
+    rect(ctx, 4, 4, 24, 2, '#FFFFFF');
+    ctx.globalAlpha = 1;
+  });
+
+  // --- park bandstand ---
+  prop(ASSET_KEYS.bandstand, 64, (ctx) => {
+    shadowEllipse(ctx, 16, 62, 15, 4);
+    // roof
+    ctx.fillStyle = mix(COLORS.interactBubbleMark, '#000000', 0.3);
+    ctx.beginPath();
+    ctx.moveTo(16, 2);
+    ctx.lineTo(31, 18);
+    ctx.lineTo(1, 18);
+    ctx.closePath();
+    ctx.fill();
+    ctx.globalAlpha = 0.4;
+    ctx.fillStyle = '#FFFFFF';
+    ctx.beginPath();
+    ctx.moveTo(16, 2);
+    ctx.lineTo(24, 18);
+    ctx.lineTo(16, 18);
+    ctx.closePath();
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    rect(ctx, 0, 18, 32, 3, mix(COLORS.benchWood, '#FFFFFF', 0.2));
+    // posts
+    rect(ctx, 3, 21, 3, 30, mix(COLORS.benchWood, '#FFFFFF', 0.15));
+    rect(ctx, 26, 21, 3, 30, mix(COLORS.benchWood, '#FFFFFF', 0.15));
+    // stage
+    rect(ctx, 1, 48, 30, 8, mix(COLORS.benchWood, '#000000', 0.1));
+    rect(ctx, 1, 48, 30, 2, mix(COLORS.benchWood, '#FFFFFF', 0.35));
+    rect(ctx, 1, 56, 30, 4, mix(COLORS.benchWood, '#000000', 0.4));
+    // warm stage light
+    ctx.globalAlpha = 0.22;
+    ctx.fillStyle = COLORS.lampGlow;
+    ctx.beginPath();
+    ctx.ellipse(16, 46, 15, 12, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  });
+}
+
 /** Everything the game needs. One call from BootScene. */
 export function generateAllPlaceholderArt(scene: Phaser.Scene): void {
   generateTileset(scene);
@@ -901,4 +1528,5 @@ export function generateAllPlaceholderArt(scene: Phaser.Scene): void {
   generateCharacterSheet(scene, ASSET_KEYS.remoteSheet, COLORS.remoteBody);
   generateCharacterSheet(scene, ASSET_KEYS.npcSheet, COLORS.npcBody);
   generateObjectSprites(scene);
+  generateInteractableSprites(scene);
 }

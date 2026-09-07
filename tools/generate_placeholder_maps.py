@@ -18,18 +18,24 @@ import random
 TILE = 32
 TILESET_NAME = "commons_city"
 TILESET_COLUMNS = 8
-TILE_COUNT = 32
+TILE_COUNT = 56
 
 # --- tile vocabulary (must match TILE_INDEX in placeholderArt.ts) -----------
 GRASS, GRASS_FLOWERS, GRASS_PATCH, PAVING, PAVING_SEAM, PLAZA, PLAZA_ACCENT, PLAZA_INLAY = range(8)
 WATER, WATER_RIPPLE, FOUNTAIN_RIM, DECK, GRAVEL, CURB, GRASS_EDGE, MANHOLE = range(8, 16)
 WALL, WINDOW, WINDOW_LIT, STOREFRONT, ROOF_EDGE, DOOR_GLASS, PILLAR, AWNING = range(16, 24)
 TREE, TREE_SMALL, HEDGE, PLANTER, BENCH, LAMP, FLOWERBED, BOLLARD = range(24, 32)
+WOOD_FLOOR, WOOD_FLOOR_DARK, CARPET, TILE_FLOOR, TILE_FLOOR_ALT, ARCADE_FLOOR, STUDY_FLOOR, STAGE_FLOOR = range(32, 40)
+WALL_INT, WALL_SKIRT, WINDOW_INT, COUNTER_FRONT, COUNTER_TOP, BOOKSHELF, SHELF_LOW, NEON_STRIP = range(40, 48)
+PATH_DIRT, POND, POND_EDGE, PICNIC_TABLE, FENCE, RUG, CHALKBOARD, KITCHEN_TILE = range(48, 56)
 
 COLLIDING = {
     WATER, WATER_RIPPLE, FOUNTAIN_RIM,
     WALL, WINDOW, WINDOW_LIT, STOREFRONT, ROOF_EDGE, PILLAR, AWNING,
     TREE, TREE_SMALL, HEDGE, PLANTER, BENCH, LAMP, BOLLARD,
+    WALL_INT, WALL_SKIRT, WINDOW_INT, COUNTER_FRONT, COUNTER_TOP,
+    BOOKSHELF, SHELF_LOW, NEON_STRIP, CHALKBOARD,
+    POND, PICNIC_TABLE, FENCE,
 }
 
 AMBIENT = {
@@ -37,6 +43,8 @@ AMBIENT = {
     FLOWERBED: "grassSway",
     WATER_RIPPLE: "waterShimmer",
     WINDOW_LIT: "windowFlicker",
+    POND: "waterShimmer",
+    NEON_STRIP: "windowFlicker",
 }
 
 OUT_DIR = os.path.join(os.path.dirname(__file__), "..", "assets", "maps")
@@ -361,11 +369,21 @@ def build_town_square():
                 "Mind the wet paint on the east benches.",
     })
 
+    # 03 puts the Study Rooms south of the square. The Arcade occupies that
+    # facade, so they share the block with a second entrance rather than being
+    # pushed somewhere the layout doesn't call for.
+    # Clear the approach: the scatter pass above runs first and will happily
+    # plant a tree exactly where the entrance path needs to be.
+    m.fill_decor(22, 23, 24, 25, -1)
+    m.fill_ground(22, 23, 24, 25, PAVING)
+    m.set_ground(23, 26, PAVING)
+
     doors = (
         ("door_library", lib_door[0], lib_door[1], "library", "LIBRARY"),
         ("door_cafe", cafe_door[0], cafe_door[1], "cafe", "CAFE"),
         ("door_arcade", arc_door[0], arc_door[1], "arcade", "ARCADE"),
         ("door_park", 19, 1, "park", "PARK"),
+        ("door_study_room", 23, 26, "study_room", "STUDY ROOMS"),
     )
     for name, tx, ty, zone, label in doors:
         m.set_decor(tx, ty, -1)
@@ -374,13 +392,265 @@ def build_town_square():
     return m
 
 
+def interior(m, w, h, floor, wall=WALL_SKIRT, windows=()):
+    """
+    A rectangular room: solid wall ring with a skirting course, floor inside,
+    and optional window positions punched into the top wall.
+    """
+    for y in range(h):
+        for x in range(w):
+            if x == 0 or y == 0 or x == w - 1 or y == h - 1:
+                m.set_ground(x, y, floor)
+                m.set_decor(x, y, WALL_INT if y == 0 else wall)
+            else:
+                m.set_ground(x, y, floor)
+    for wx in windows:
+        m.set_decor(wx, 0, WINDOW_INT)
+
+
+def add_exit(m, tx, ty, target, label):
+    """A door back out to the square. Walkable; triggers on step."""
+    m.set_decor(tx, ty, -1)
+    m.set_ground(tx, ty, m.ground_at(tx, ty))
+    m.add_object("door_%s" % target, "door", tx, ty, False,
+                 {"targetZone": target, "label": label})
+
+
+def build_library():
+    """Quiet zone: focus pods along the walls, a reading nook, stacks (03)."""
+    W, H = 24, 18
+    m = MapBuilder(W, H, seed=11)
+    interior(m, W, H, WOOD_FLOOR, windows=(4, 5, 11, 12, 18, 19))
+
+    # carpeted reading area in the centre
+    m.fill_ground(8, 8, 15, 13, CARPET)
+    m.set_ground(11, 10, RUG)
+    m.set_ground(12, 10, RUG)
+
+    # stacks: two runs of shelving with an aisle between
+    for y in (4, 5):
+        for x in range(3, 10):
+            m.set_decor(x, y, BOOKSHELF)
+    for y in (4, 5):
+        for x in range(14, 21):
+            m.set_decor(x, y, BOOKSHELF)
+    for x in range(3, 21, 4):
+        m.set_decor(x, 15, SHELF_LOW)
+
+    m.set_decor(2, 8, CHALKBOARD)
+
+    # objects
+    m.add_point("spawn", "spawn", 12, 16)
+    for i, x in enumerate((4, 7, 16, 19), start=1):
+        m.add_object("focus_pod_%d" % i, "focus_pod", x, 8, True, {
+            "text": "A focus pod. Sitting here starts a timer and tells the room "
+                    "you are working.",
+        })
+    m.add_object("reading_nook", "reading_nook", 12, 12, True, {
+        "text": "A deep armchair under a warm lamp.|No timer, no goal. Just somewhere "
+                "to sit near people.",
+    })
+    m.add_object("npc_librarian", "npc", 20, 12, True, {
+        "text": "Keep it down and you can stay as long as you like.|"
+                "The pods on the left get the afternoon sun, if that matters to you.",
+    })
+    add_exit(m, 12, 17, "town_square", "OUT")
+    return m
+
+
+def build_cafe():
+    """Social zone: jukebox centrepiece, counter, booths and tables (03)."""
+    W, H = 24, 18
+    m = MapBuilder(W, H, seed=13)
+    interior(m, W, H, TILE_FLOOR, windows=(3, 4, 19, 20))
+
+    # service counter along the north wall
+    for x in range(3, 12):
+        m.set_decor(x, 2, COUNTER_TOP)
+        m.set_decor(x, 3, COUNTER_FRONT)
+    m.fill_ground(3, 1, 11, 1, KITCHEN_TILE)
+
+    # warm wooden terrace on the east side
+    m.fill_ground(15, 5, 21, 13, WOOD_FLOOR)
+    m.fill_ground(4, 12, 11, 15, TILE_FLOOR_ALT)
+
+    m.add_point("spawn", "spawn", 12, 16)
+    m.add_object("jukebox", "jukebox", 12, 3, True, {
+        "text": "A jukebox, wired to every speaker in the room.|"
+                "Whatever is playing, everyone here hears the same thing.",
+    })
+    m.add_object("counter_barista", "npc", 6, 4, True, {
+        "text": "Long day? Same.|Drinks are free, they are also imaginary. "
+                "Take your time.",
+    })
+    for i, (x, y) in enumerate(((16, 6), (20, 6), (16, 11), (20, 11)), start=1):
+        m.add_object("booth_%d" % i, "seat", x, y, True, {
+            "text": "A booth by the window. Comfortable enough to lose an hour in.",
+        })
+    for i, (x, y) in enumerate(((5, 13), (9, 13)), start=1):
+        m.add_object("table_%d" % i, "seat", x, y, True, {
+            "text": "A small table with two chairs.",
+        })
+    add_exit(m, 12, 17, "town_square", "OUT")
+    return m
+
+
+def build_arcade():
+    """Cabinets are placed from minigames.config at runtime, not baked in (06)."""
+    W, H = 22, 16
+    m = MapBuilder(W, H, seed=17)
+    interior(m, W, H, ARCADE_FLOOR, windows=())
+
+    # neon strips along the side walls
+    for y in range(3, 13, 3):
+        m.set_decor(0, y, NEON_STRIP)
+        m.set_decor(W - 1, y, NEON_STRIP)
+
+    # a prize counter in the corner
+    for x in range(2, 7):
+        m.set_decor(x, 2, COUNTER_TOP)
+        m.set_decor(x, 3, COUNTER_FRONT)
+
+    m.add_point("spawn", "spawn", 11, 14)
+    m.add_object("npc_attendant", "npc", 8, 4, True, {
+        "text": "Cabinets are along the walls. High scores stick around, "
+                "your dignity does not.|"
+                "New machines show up whenever someone builds one.",
+    })
+    add_exit(m, 11, 15, "town_square", "OUT")
+    return m
+
+
+def build_park():
+    """Open outdoor hangout: pond, bandstand, benches, least dense zone (03)."""
+    W, H = 30, 22
+    m = MapBuilder(W, H, seed=19)
+
+    for y in range(H):
+        for x in range(W):
+            m.set_ground(x, y, GRASS)
+
+    # winding dirt path
+    for x in range(4, 26):
+        m.set_ground(x, 15, PATH_DIRT)
+        m.set_ground(x, 16, PATH_DIRT)
+    for y in range(6, 16):
+        m.set_ground(14, y, PATH_DIRT)
+        m.set_ground(15, y, PATH_DIRT)
+
+    # pond, north-east
+    m.fill_decor(20, 5, 25, 9, POND)
+    for x in range(19, 27):
+        m.set_ground(x, 10, POND_EDGE)
+    for x in range(19, 27):
+        m.set_ground(x, 4, POND_EDGE)
+
+    # picnic area, west
+    for x, y in ((5, 8), (8, 8), (5, 11), (8, 11)):
+        m.set_decor(x, y, PICNIC_TABLE)
+
+    # perimeter fence with a gap at the south gate
+    for x in range(1, W - 1):
+        if x not in (14, 15):
+            m.set_decor(x, H - 2, FENCE)
+        m.set_decor(x, 1, FENCE)
+    for y in range(1, H - 1):
+        m.set_decor(1, y, FENCE)
+        m.set_decor(W - 2, y, FENCE)
+
+    # benches facing the bandstand
+    for bx in (12, 17):
+        m.set_decor(bx, 11, BENCH)
+
+    # scattered planting
+    for _ in range(180):
+        x = m.rng.randrange(2, W - 2)
+        y = m.rng.randrange(2, H - 2)
+        if m.ground_at(x, y) != GRASS or not m.is_free(x, y):
+            continue
+        roll = m.rng.random()
+        if roll < 0.22:
+            m.set_decor(x, y, TREE)
+        elif roll < 0.34:
+            m.set_decor(x, y, TREE_SMALL)
+        elif roll < 0.44:
+            m.set_decor(x, y, HEDGE)
+        elif roll < 0.58:
+            m.set_ground(x, y, GRASS_FLOWERS)
+        elif roll < 0.66:
+            m.set_ground(x, y, FLOWERBED)
+
+    # bandstand clearing, sized to the structure that stands on it
+    m.fill_ground(13, 6, 17, 8, STAGE_FLOOR)
+    for x in range(13, 18):
+        for y in range(6, 9):
+            m.set_decor(x, y, -1)
+
+    m.add_point("spawn", "spawn", 14, 18)
+    m.add_object("bandstand", "jukebox", 15, 8, True, {
+        "sprite": "obj_bandstand",
+        "text": "The bandstand. Same shared queue as the cafe, but out here it is "
+                "background rather than the point.",
+    })
+    for i, (x, y) in enumerate(((12, 11), (17, 11)), start=1):
+        m.add_object("bench_%d" % i, "seat", x, y, True, {
+            "text": "A bench facing the bandstand.",
+        })
+    m.add_object("bench_3", "seat", 22, 13, True, {
+        "text": "A bench by the pond. Ducks not included.",
+    })
+    m.add_object("npc_busker", "npc", 18, 12, True, {
+        "text": "I play here most evenings.|Nobody has to listen. That is rather "
+                "the point of a park.",
+    })
+    add_exit(m, 14, 20, "town_square", "OUT")
+    m.set_ground(14, 20, PATH_DIRT)
+    m.set_ground(15, 20, PATH_DIRT)
+    return m
+
+
+def build_study_room():
+    """Instanced focus room: desks, a shared timer, deliberately plain (03)."""
+    W, H = 18, 14
+    m = MapBuilder(W, H, seed=23)
+    interior(m, W, H, STUDY_FLOOR, windows=(8, 9))
+
+    m.fill_ground(6, 5, 11, 9, CARPET)
+
+    m.add_point("spawn", "spawn", 9, 12)
+    for i, (x, y) in enumerate(((4, 4), (13, 4), (4, 9), (13, 9)), start=1):
+        m.add_object("desk_%d" % i, "focus_pod", x, y, True, {
+            "sprite": "obj_desk",
+            "text": "A desk. Sitting down starts your timer and shows the room "
+                    "you are working.",
+        })
+    m.add_object("shared_timer", "focus_pod", 9, 2, True, {
+        "sprite": "obj_shared_timer",
+        "text": "The shared timer. Whoever starts it, everyone in the room runs "
+                "the same clock.",
+    })
+    add_exit(m, 9, 13, "town_square", "OUT")
+    return m
+
+
+ZONE_BUILDERS = {
+    "town_square": build_town_square,
+    "library": build_library,
+    "cafe": build_cafe,
+    "arcade": build_arcade,
+    "park": build_park,
+    "study_room": build_study_room,
+}
+
+
 def main():
     os.makedirs(OUT_DIR, exist_ok=True)
-    out = os.path.abspath(os.path.join(OUT_DIR, "town_square.json"))
-    with open(out, "w", encoding="utf-8", newline="\n") as fh:
-        json.dump(build_town_square().to_json(), fh, indent=1)
-        fh.write("\n")
-    print("wrote", out)
+    for name, builder in ZONE_BUILDERS.items():
+        out = os.path.abspath(os.path.join(OUT_DIR, "%s.json" % name))
+        with open(out, "w", encoding="utf-8", newline="\n") as fh:
+            json.dump(builder().to_json(), fh, indent=1)
+            fh.write("\n")
+        print("wrote", out)
 
 
 if __name__ == "__main__":

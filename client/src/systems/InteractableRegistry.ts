@@ -13,8 +13,8 @@
  */
 
 import type Phaser from 'phaser';
-import type { InteractableKind, InteractableObject, ZoneConfig, ZoneId } from '@commons/shared';
-import { getZone } from '@commons/shared';
+import type { InteractableKind, InteractableObject, PlayerStatus, ZoneConfig, ZoneId } from '@commons/shared';
+import { COLORS, SIT, getZone } from '@commons/shared';
 import { ui } from '../ui/UIScene';
 
 export interface InteractionContext {
@@ -23,6 +23,11 @@ export interface InteractionContext {
   object: InteractableObject;
   /** Locks/unlocks player movement for the duration of the interaction. */
   setBlocked: (blocked: boolean) => void;
+  /** Walk out of this zone into another. Owned by ZoneScene (fade + room swap). */
+  transitionTo: (zoneId: ZoneId) => void;
+  isSitting: () => boolean;
+  sit: (status: PlayerStatus) => void;
+  stand: () => void;
 }
 
 export type InteractionHandler = (ctx: InteractionContext) => void;
@@ -73,15 +78,73 @@ export const INTERACTABLE_HANDLERS: Partial<Record<InteractableKind, Interaction
     const target = safeGetZone(targetZoneId);
     const label = target?.displayName ?? 'that way';
 
-    // PHASE 2: replace this branch with the zone-transition system
-    // (fade 250ms out -> leave room / join room -> fade 250ms in, per 10).
     const sceneExists = target ? ctx.scene.scene.manager.keys[target.sceneKey] !== undefined : false;
-    if (!sceneExists) {
+    if (!target || !sceneExists) {
       speak(ctx, `The ${label} isn't open yet.|Come back once it's built.`);
       return;
     }
 
-    ctx.scene.scene.start(target!.sceneKey, { fromZone: ctx.zone.id });
+    ctx.transitionTo(target.id);
+  },
+
+  /**
+   * Focus pod / study desk. 11: status flows from location and action, never a
+   * manual toggle — sitting here IS what marks you as studying, and standing up
+   * is what stops it. There is no start button anywhere.
+   */
+  focus_pod: (ctx) => {
+    if (ctx.isSitting()) {
+      ctx.stand();
+      ui.popup?.show('Session ended', { iconColor: COLORS.statusAfk });
+      return;
+    }
+
+    ctx.sit('studying');
+    // The icon waits for the sit to finish, so two things never animate at once.
+    ctx.scene.time.delayedCall(SIT.statusIconDelayMs, () => {
+      ui.popup?.show('Focus session started', { iconColor: COLORS.statusStudying });
+    });
+  },
+
+  /** Cafe booths, park benches. Purely social — no timer, no status change. */
+  seat: (ctx) => {
+    if (ctx.isSitting()) {
+      ctx.stand();
+      return;
+    }
+    ctx.sit('idle');
+  },
+
+  /** Library reading nook: sit near people without a formal timer (03). */
+  reading_nook: (ctx) => {
+    if (ctx.isSitting()) {
+      ctx.stand();
+      return;
+    }
+    ctx.sit('idle');
+    ctx.scene.time.delayedCall(SIT.statusIconDelayMs, () => {
+      speak(ctx, textOf(ctx.object, 'You settle in.'));
+    });
+  },
+
+  /**
+   * Jukebox and bandstand. The shared queue is Phase 4 — this reports the state
+   * of things rather than pretending to play something.
+   */
+  jukebox: (ctx) => {
+    speak(
+      ctx,
+      `${textOf(ctx.object, 'A jukebox.')}|` +
+        'The shared queue is not wired up yet, so for now it just hums to itself.',
+    );
+  },
+
+  /**
+   * Arcade cabinet. Launching the minigame scene is Phase 3; the cabinet itself
+   * already exists here because the Arcade builds one per config entry.
+   */
+  cabinet: (ctx) => {
+    speak(ctx, `${textOf(ctx.object, 'An arcade cabinet.')}|Insert imaginary coin. (Phase 3.)`);
   },
 };
 
