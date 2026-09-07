@@ -59,6 +59,8 @@ export abstract class ZoneScene extends Phaser.Scene {
   protected multiplayer?: MultiplayerSystem;
 
   private sceneData: ZoneSceneData = {};
+  /** Tracks hint visibility so it is only toggled on an actual change. */
+  private hintHidden = false;
 
   protected constructor(zone: ZoneConfig) {
     super({ key: zone.sceneKey });
@@ -113,11 +115,17 @@ export abstract class ZoneScene extends Phaser.Scene {
 
   override update(time: number): void {
     const dialogue = ui.dialogue;
+    const dialogueOpen = Boolean(dialogue?.isVisible);
+
+    if (dialogueOpen !== this.hintHidden) {
+      this.hintHidden = dialogueOpen;
+      ui.hud?.setHintVisible(!dialogueOpen);
+    }
 
     // A visible dialogue box owns Space. The player is already BLOCKED, so
     // movement is inert; this stops the same press also re-triggering the world.
-    if (dialogue?.isVisible) {
-      if (this.controls.justPressed('interact')) dialogue.advance();
+    if (dialogueOpen) {
+      if (this.controls.justPressed('interact')) dialogue?.advance();
       return;
     }
 
@@ -162,13 +170,32 @@ export abstract class ZoneScene extends Phaser.Scene {
 
   protected configureCamera(): void {
     const camera = this.cameras.main;
-    // tileDisplayScale applied as zoom: 480x320 at zoom 2 = 15x10 visible tiles,
-    // which is the GBA framing. See VIEWPORT in designTokens.ts.
-    camera.setZoom(VIEWPORT.zoom);
     camera.setBounds(0, 0, this.zoneMap.widthInPixels, this.zoneMap.heightInPixels);
     // Smooth-follow rather than rigid lock (04).
     camera.startFollow(this.player.sprite, true, CAMERA.followLerp, CAMERA.followLerp);
     camera.roundPixels = true;
+
+    this.applyViewport();
+    this.scale.on(Phaser.Scale.Events.RESIZE, this.applyViewport, this);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.scale.off(Phaser.Scale.Events.RESIZE, this.applyViewport, this);
+    });
+  }
+
+  /**
+   * Match the camera to the live window.
+   *
+   * Zoom comes from window HEIGHT so a wider window shows more of the city
+   * rather than magnifying the same slice — which is what makes a resize feel
+   * like a bigger window instead of a zoom control.
+   */
+  protected applyViewport(): void {
+    const { width, height } = this.scale.gameSize;
+    if (width === 0 || height === 0) return;
+
+    const camera = this.cameras.main;
+    camera.setSize(width, height);
+    camera.setZoom(VIEWPORT.zoomFor(height));
   }
 
   /**
@@ -196,12 +223,12 @@ export abstract class ZoneScene extends Phaser.Scene {
           const label = object.props['label'];
           if (typeof label === 'string') {
             this.add
-              .text(world.x, world.y - 20, label, {
+              .text(world.x, world.y - 52, label, {
                 fontFamily: 'monospace',
-                fontSize: '8px',
-                color: COLORS.dialogueBoxBg,
-                backgroundColor: COLORS.dialogueBoxBorder,
-                padding: { x: 2, y: 1 },
+                fontSize: '11px',
+                color: COLORS.hudText,
+                backgroundColor: COLORS.hudBg,
+                padding: { x: 6, y: 3 },
               })
               .setOrigin(0.5, 1)
               .setDepth(world.y + 400);

@@ -16,15 +16,14 @@ import type { AmbientTile, ZoneMap } from './ZoneMap';
 const TILE = SPACING.tile;
 
 /** Hard ceiling on animated props per zone, so a dense map can't tank the frame. */
-const MAX_ANIMATED = 80;
+const MAX_ANIMATED = 140;
 
 type AmbientBuilder = (scene: Phaser.Scene, entry: AmbientTile, index: number) => Phaser.GameObjects.GameObject;
 
 const BUILDERS: Record<string, AmbientBuilder> = {
   /**
-   * A slow horizontal squash, anchored at the base of the tile so the tuft
-   * bends rather than slides. 2-3 frame loop, ~1.5s cycle per 10's table —
-   * expressed here as a tween because the placeholder tileset has one frame.
+   * A slow horizontal squash anchored at the base of the tile, so planting
+   * bends rather than slides. ~1.5s cycle per 10's table.
    */
   grassSway: (scene, entry, index) => {
     const x = entry.tile.x * TILE + TILE / 2;
@@ -37,7 +36,7 @@ const BUILDERS: Record<string, AmbientBuilder> = {
 
     scene.tweens.add({
       targets: sprite,
-      scaleX: 0.9,
+      scaleX: 0.92,
       duration: AMBIENT.grassSway.cycleMs / 2,
       yoyo: true,
       repeat: -1,
@@ -45,6 +44,61 @@ const BUILDERS: Record<string, AmbientBuilder> = {
       // Stagger, or the whole field pulses in unison and reads as a glitch.
       delay: (index % 7) * (AMBIENT.grassSway.cycleMs / 7),
     });
+
+    return sprite;
+  },
+
+  /** Fountain water: a gentle brightness pulse, like light moving on a surface. */
+  waterShimmer: (scene, entry, index) => {
+    const x = entry.tile.x * TILE + TILE / 2;
+    const y = entry.tile.y * TILE + TILE;
+
+    const sprite = scene.add
+      .image(x, y, ASSET_KEYS.tileset, entry.frame)
+      .setOrigin(0.5, 1)
+      .setDepth(-99);
+
+    scene.tweens.add({
+      targets: sprite,
+      alpha: 0.55,
+      duration: 1400,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut',
+      delay: (index % 5) * 280,
+    });
+
+    return sprite;
+  },
+
+  /**
+   * Lit office windows. Long random holds rather than a steady blink — a
+   * regular pulse reads as a fault, an occasional change reads as someone
+   * moving about inside.
+   */
+  windowFlicker: (scene, entry, index) => {
+    const x = entry.tile.x * TILE + TILE / 2;
+    const y = entry.tile.y * TILE + TILE;
+
+    const sprite = scene.add
+      .image(x, y, ASSET_KEYS.tileset, entry.frame)
+      .setOrigin(0.5, 1)
+      .setDepth(-99)
+      .setAlpha(0.9);
+
+    const schedule = () => {
+      scene.time.delayedCall(2500 + Math.random() * 6000, () => {
+        if (!sprite.active) return;
+        scene.tweens.add({
+          targets: sprite,
+          alpha: sprite.alpha > 0.6 ? 0.35 : 0.95,
+          duration: 420,
+          ease: 'Quad.easeInOut',
+          onComplete: schedule,
+        });
+      });
+    };
+    scene.time.delayedCall(index * 140, schedule);
 
     return sprite;
   },

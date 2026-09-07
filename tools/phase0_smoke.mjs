@@ -164,6 +164,10 @@ try {
   // single-player when the connection fails.
   await context.addInitScript(() => {
     localStorage.setItem('commons.session', JSON.stringify({ displayName: 'Solo' }));
+    // Point at a port nothing listens on. This suite asserts the zone stays
+    // fully playable when the server is unreachable, so the failure must be
+    // forced rather than assumed from "no server happens to be running".
+    localStorage.setItem('commons.serverUrl', 'ws://localhost:59999');
   });
   const page = await context.newPage();
 
@@ -198,19 +202,21 @@ try {
   console.log('\nboot');
   const boot = await gameState(page);
   check('Town Square scene is active', boot?.active === true);
-  check('map is 30x22', boot?.mapSize.w === 30 && boot?.mapSize.h === 22, JSON.stringify(boot?.mapSize));
-  check('10 interactables parsed from the map', boot?.interactableCount === 10, `got ${boot?.interactableCount}`);
-  check('player spawned at (15,12)', boot?.tile.x === 15 && boot?.tile.y === 12, JSON.stringify(boot?.tile));
+  check('map is 40x30', boot?.mapSize.w === 40 && boot?.mapSize.h === 30, JSON.stringify(boot?.mapSize));
+  check('11 interactables parsed from the map', boot?.interactableCount === 11, `got ${boot?.interactableCount}`);
+  check('player spawned at (19,20)', boot?.tile.x === 19 && boot?.tile.y === 20, JSON.stringify(boot?.tile));
 
   // --- holding a direction chains tiles ---------------------------------
   console.log('\nmovement');
-  await teleport(page, 15, 12, 'down');
-  await holdKey(page, 'KeyW', 700);
+  // A clear east-west stretch across the south of the plaza: no fountain rim,
+  // no benches, no planters, and crucially no door to walk onto.
+  await teleport(page, 13, 21, 'down');
+  await holdKey(page, 'KeyD', 700);
   const afterWalk = await gameState(page);
-  const tilesMoved = 12 - afterWalk.tile.y;
+  const tilesMoved = afterWalk.tile.x - 13;
   // 700ms of held input at 130ms/tile, minus the 60ms turn, is ~4-5 tiles.
-  check('holding W walks several tiles north', tilesMoved >= 3 && tilesMoved <= 6, `moved ${tilesMoved}`);
-  check('player faces up after walking north', afterWalk.facing === 'up', afterWalk.facing);
+  check('holding D walks several tiles east', tilesMoved >= 3 && tilesMoved <= 6, `moved ${tilesMoved}`);
+  check('player faces right after walking east', afterWalk.facing === 'right', afterWalk.facing);
   check('player returns to IDLE after the key is released', afterWalk.state === 'IDLE', afterWalk.state);
 
   // --- turn in place -----------------------------------------------------
@@ -225,7 +231,7 @@ try {
     const movement = scene.player.movement;
     const sample = () => ({ x: movement.tile.x, y: movement.tile.y, facing: movement.facing });
 
-    movement.teleport({ x: 15, y: 12 }, 'down');
+    movement.teleport({ x: 19, y: 21 }, 'down');
     movement.update(0, 'left');    // first frame: turn, start the timer
     const atStart = sample();
     movement.update(30, 'left');   // 30ms < turnInPlaceMs: still turning
@@ -233,7 +239,7 @@ try {
     movement.update(100, 'left');  // past the delay: commit the step
     const afterDelay = sample();
 
-    movement.teleport({ x: 15, y: 12 }, 'left');
+    movement.teleport({ x: 19, y: 21 }, 'left');
     movement.update(200, 'left');  // already facing left: no delay at all
     const alreadyFacing = sample();
 
@@ -243,25 +249,25 @@ try {
   await page.waitForTimeout(250);
 
   check('first frame of a turn faces the new direction', turn.atStart.facing === 'left', turn.atStart.facing);
-  check('a turn does not move on the first frame', turn.atStart.x === 15, `x=${turn.atStart.x}`);
-  check('still stationary partway through the turn delay', turn.midTurn.x === 15, `x=${turn.midTurn.x}`);
-  check('steps once the turn delay elapses', turn.afterDelay.x === 14, `x=${turn.afterDelay.x}`);
-  check('no turn delay when already facing that way', turn.alreadyFacing.x === 14, `x=${turn.alreadyFacing.x}`);
+  check('a turn does not move on the first frame', turn.atStart.x === 19, `x=${turn.atStart.x}`);
+  check('still stationary partway through the turn delay', turn.midTurn.x === 19, `x=${turn.midTurn.x}`);
+  check('steps once the turn delay elapses', turn.afterDelay.x === 18, `x=${turn.afterDelay.x}`);
+  check('no turn delay when already facing that way', turn.alreadyFacing.x === 18, `x=${turn.alreadyFacing.x}`);
 
   // --- collision --------------------------------------------------------
   console.log('\ncollision');
-  // sign_welcome blocks (16,12); the player at (15,12) faces it by pressing D.
-  await teleport(page, 15, 12, 'down');
+  // sign_welcome blocks (20,20); the player at (19,20) faces it by pressing D.
+  await teleport(page, 19, 20, 'down');
   await holdKey(page, 'KeyD', 400);
   const afterBump = await gameState(page);
-  check('walking into the signpost does not move the player', afterBump.tile.x === 15, `x=${afterBump.tile.x}`);
+  check('walking into the signpost does not move the player', afterBump.tile.x === 19, `x=${afterBump.tile.x}`);
   check('player still turns to face the obstacle', afterBump.facing === 'right', afterBump.facing);
 
-  // Map edge / tree border.
-  await teleport(page, 15, 2, 'up');
-  await holdKey(page, 'KeyW', 500);
+  // Park gate at the top of the north avenue.
+  await teleport(page, 19, 3, 'up');
+  await holdKey(page, 'KeyW', 600);
   const afterEdge = await gameState(page);
-  check('cannot walk off the map through the north gate wall', afterEdge.tile.y >= 0 && afterEdge.tile.y <= 2, `y=${afterEdge.tile.y}`);
+  check('cannot walk off the north edge of the map', afterEdge.tile.y >= 0 && afterEdge.tile.y <= 3, `y=${afterEdge.tile.y}`);
   check('stepping onto a door tile fires its interaction', afterEdge.dialogueVisible === true);
 
   // --- interaction + dialogue -------------------------------------------
@@ -269,7 +275,7 @@ try {
   // The north-gate check above steps onto the park door, which opens a
   // "not open yet" dialogue. Clear it before asserting on a fresh one.
   await dismissDialogue(page);
-  await teleport(page, 15, 12, 'right'); // facing sign_welcome at (16,12)
+  await teleport(page, 19, 20, 'right'); // facing sign_welcome at (20,20)
   await tapKey(page, 'Space');
   await page.waitForTimeout(220);
   const inDialogue = await gameState(page);
@@ -279,7 +285,7 @@ try {
   // Movement must be inert while blocked.
   await holdKey(page, 'KeyS', 300);
   const duringDialogue = await gameState(page);
-  check('WASD is ignored while dialogue is open', duringDialogue.tile.y === 12, `y=${duringDialogue.tile.y}`);
+  check('WASD is ignored while dialogue is open', duringDialogue.tile.y === 20, `y=${duringDialogue.tile.y}`);
 
   // Space through every page until it closes.
   await dismissDialogue(page);
@@ -289,7 +295,7 @@ try {
   check('control returns to the player after dialogue', afterDialogue.state === 'IDLE', afterDialogue.state);
 
   // --- NPC --------------------------------------------------------------
-  await teleport(page, 13, 13, 'left'); // facing npc_wanderer at (12,13)
+  await teleport(page, 16, 16, 'left'); // facing npc_wanderer at (15,16)
   await tapKey(page, 'Space');
   await page.waitForTimeout(220);
   const npcDialogue = await gameState(page);
@@ -303,11 +309,11 @@ try {
 
   // Close dialogue and take a clean world shot.
   await dismissDialogue(page);
-  await teleport(page, 15, 12, 'down');
+  await teleport(page, 19, 20, 'down');
   await page.waitForTimeout(400);
   await page.screenshot({ path: resolve(shotDir, 'phase0_town_square.png') });
 
-  await teleport(page, 15, 12, 'right');
+  await teleport(page, 19, 20, 'right');
   await tapKey(page, 'Space');
   await page.waitForTimeout(800);
   await page.screenshot({ path: resolve(shotDir, 'phase0_dialogue.png') });

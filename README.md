@@ -62,6 +62,7 @@ node tools/verify_maps.mjs  # validate every map: spawn, reachability, door targ
 python tools/generate_placeholder_maps.py   # regenerate placeholder Tiled maps
 node tools/phase0_smoke.mjs  # single-player smoke test (no server needed)
 node tools/phase1_sync.mjs   # two-client multiplayer sync test (boots server + client)
+node tools/capture_screens.mjs # screenshot the loading, title and world screens
 ```
 
 Both need `npx playwright install chromium` once. Add `--headed` to watch.
@@ -197,11 +198,23 @@ added beyond the specs are commented `[ADDED]` with the reason.
 
 ### Viewport
 
-`tileDisplayScale: 2` is applied as **camera zoom** on a GBA-proportioned
-480×320 canvas, giving exactly 15×10 visible tiles (FireRed framing). Phaser's
-`FIT` scale mode upscales the canvas to the browser window, which is where
-legibility comes from without breaking the pixel grid. The UI runs in a separate
-scene at zoom 1 so text renders at its true token size.
+The canvas **resizes to the window** (`Phaser.Scale.RESIZE`) rather than
+rendering at a fixed design resolution and letterboxing. There is therefore no
+single design resolution:
+
+- World cameras pick zoom from window **height** via `VIEWPORT.zoomFor`, so a
+  wider window shows more city instead of magnifying the same slice. Zoom is
+  quantized to half steps — unconstrained fractional zoom makes pixel edges
+  shimmer as the camera moves.
+- The UI scene lays out against the live camera size and reflows on resize.
+
+### Art resolution
+
+Source art is authored at **32×32 per tile** and **32×64 per character**. That
+is the change that makes the world look clearer: scaling 16px art up only makes
+it bigger, while four times the pixel budget lets every tile carry gradients,
+edge highlights, grain and cast shadows. All of it is still generated
+procedurally at runtime from `shared/designTokens.ts`.
 
 ---
 
@@ -227,7 +240,9 @@ Flagged rather than made silently:
 |---|---|---|
 | 09: `ts-node-dev` | Using `tsx` | Avoids ESM + tsconfig path-mapping friction resolving `@commons/shared` |
 | 09: `client/public/` | Vite `publicDir` points at repo-root `assets/` | The server needs the same map JSON for authoritative collision in Phase 1; duplicating guarantees drift |
-| 11: `tileDisplayScale` | Applied as camera zoom, not sprite scale | As a sprite scale it shows ~30×20 tiles, which doesn't read as FireRed |
+| **07 + 11: art direction** | **Higher-resolution modern city instead of GBA pixel art** | **Requested.** Tiles authored at 32×32 (4× the pixels), cooler contemporary palette, glass-and-concrete buildings, paved plaza with a fountain and street furniture |
+| **11: `tileDisplayScale`** | **1, with camera zoom derived from window height** | Art is authored at final resolution; zoom now adapts to the window so a bigger screen shows more city rather than a magnified slice |
+| **Scale mode** | **RESIZE, canvas fills the window** | FIT letterboxes on any window that isn't the design aspect ratio; black bars don't read as a modern game |
 | 10: bump timing | 60ms yoyo (60 out + 60 back) | Reading of "60ms nudge, then spring back" |
 | 04/10 | Added `turnInPlaceMs: 60` | Tap-to-turn is core FireRed feel; spec only covered turning while blocked |
 | 10: zone fade hold | Added `holdMs: 80` | Spec says "brief hold" without a number |

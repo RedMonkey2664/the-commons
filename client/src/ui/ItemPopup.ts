@@ -1,21 +1,20 @@
 /**
- * Item / status popup — the "received HM04 from the WARDEN" banner from 07,
- * generalized. Reused for cosmetic unlocks, new high scores, and
- * "friend joined the world".
+ * Item / status popup — the "received X from Y" banner from 07, generalized.
+ * Reused for cosmetic unlocks, new high scores, and "friend joined the world".
  *
  * Motion per 10: scale 1.0 -> 1.05 -> 1.0 over 250ms, hold 2s, fade out 200ms.
  * This is the one place a bouncier easing belongs — it is a reward beat.
  */
 
 import Phaser from 'phaser';
-import { COLORS, SPACING, TYPOGRAPHY, UI, VIEWPORT, hex } from '@commons/shared';
+import { COLORS, SPACING, TYPOGRAPHY, UI, hex } from '@commons/shared';
 
-const WIDTH = 232;
-const HEIGHT = 46;
-const ICON = 28;
+const WIDTH = 380;
+const HEIGHT = 76;
+const ICON = 48;
 
 export interface PopupOptions {
-  /** Texture key for the portrait/icon. Falls back to a colored square. */
+  /** Texture key for the portrait/icon. Falls back to a coloured swatch. */
   iconTexture?: string;
   iconFrame?: number;
   iconColor?: string;
@@ -37,29 +36,31 @@ export class ItemPopup {
 
   constructor(private readonly scene: Phaser.Scene) {
     const frame = scene.add.graphics();
-    frame.fillStyle(hex(COLORS.dialogueBoxShadow), 0.5);
-    frame.fillRoundedRect(3, 3, WIDTH, HEIGHT, 5);
+    frame.fillStyle(0x000000, 0.28);
+    frame.fillRoundedRect(4, 6, WIDTH, HEIGHT, 12);
     frame.fillStyle(hex(COLORS.dialogueBoxBorder), 1);
-    frame.fillRoundedRect(0, 0, WIDTH, HEIGHT, 5);
+    frame.fillRoundedRect(0, 0, WIDTH, HEIGHT, 12);
     frame.fillStyle(hex(COLORS.dialogueBoxBg), 1);
-    frame.fillRoundedRect(3, 3, WIDTH - 6, HEIGHT - 6, 3);
+    frame.fillRoundedRect(3, 3, WIDTH - 6, HEIGHT - 6, 10);
+    frame.fillStyle(hex(COLORS.dialogueBoxAccent), 1);
+    frame.fillRoundedRect(3, 3, 5, HEIGHT - 6, 3);
 
-    const iconX = 9 + ICON / 2;
+    const iconX = 20 + ICON / 2;
     const iconY = HEIGHT / 2;
 
     this.iconSwatch = scene.add
       .rectangle(iconX, iconY, ICON, ICON, hex(COLORS.statusStudying))
-      .setStrokeStyle(1, hex(COLORS.dialogueBoxBorder));
+      .setStrokeStyle(2, hex(COLORS.dialogueBoxBorder));
 
     this.iconImage = scene.add.image(iconX, iconY, '__DEFAULT').setVisible(false);
 
     this.label = scene.add
-      .text(9 + ICON + 10, HEIGHT / 2, '', {
+      .text(20 + ICON + 18, HEIGHT / 2, '', {
         fontFamily: TYPOGRAPHY.dialogueFont,
         fontSize: `${TYPOGRAPHY.hudFontSize}px`,
         color: COLORS.dialogueBoxText,
-        wordWrap: { width: WIDTH - ICON - 30 },
-        lineSpacing: 3,
+        wordWrap: { width: WIDTH - ICON - 60 },
+        lineSpacing: 4,
       })
       .setOrigin(0, 0.5);
 
@@ -67,8 +68,6 @@ export class ItemPopup {
       .container(0, 0, [frame, this.iconSwatch, this.iconImage, this.label])
       .setDepth(1200)
       .setVisible(false);
-
-    // Scale from the banner's own centre so the overshoot reads evenly.
     this.container.setSize(WIDTH, HEIGHT);
   }
 
@@ -95,12 +94,15 @@ export class ItemPopup {
         .setDisplaySize(ICON, ICON);
       this.iconSwatch.setVisible(false);
     } else {
-      this.iconSwatch.setFillStyle(hex(item.options.iconColor ?? COLORS.statusStudying)).setVisible(true);
+      this.iconSwatch
+        .setFillStyle(hex(item.options.iconColor ?? COLORS.statusStudying))
+        .setVisible(true);
       this.iconImage.setVisible(false);
     }
 
-    const x = (VIEWPORT.width - WIDTH) / 2;
-    const y = SPACING.hudMargin + 18;
+    const { width } = this.scene.scale.gameSize;
+    const x = Math.round((width - WIDTH) / 2);
+    const y = SPACING.hudMargin + 74;
     this.container.setPosition(x, y).setVisible(true).setAlpha(0);
 
     // Container scaling pivots at the origin, so nudge position to keep the

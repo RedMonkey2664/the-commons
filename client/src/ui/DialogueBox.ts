@@ -1,21 +1,24 @@
 /**
- * Pokemon-style dialogue box (07) with the timings from 10.
+ * Dialogue box (07) with the timings from 10.
  *
  *   slide up 180ms ease-out -> reveal text at 30ms/char -> Space skips the
  *   reveal -> Space again advances -> last page slides away.
  *
- * Long text is pre-wrapped and split into 3-line pages, so the box never grows
- * and never scrolls. That is why the reveal is done against pre-wrapped text:
- * revealing character-by-character through a live word-wrap makes words hop
- * between lines as they appear.
+ * Long text is pre-wrapped and split into pages, so the box never grows and
+ * never scrolls. The reveal runs against pre-wrapped text because revealing
+ * character-by-character through a live word-wrap makes words hop between lines
+ * as they appear.
+ *
+ * The canvas resizes with the window, so geometry is rebuilt on resize rather
+ * than assuming a fixed design resolution.
  */
 
 import Phaser from 'phaser';
-import { COLORS, SPACING, TYPOGRAPHY, UI, VIEWPORT, hex } from '@commons/shared';
+import { COLORS, SPACING, TYPOGRAPHY, UI, hex } from '@commons/shared';
 
-const BOX_HEIGHT = 84;
 const LINES_PER_PAGE = 3;
-const LINE_SPACING = 6;
+const LINE_SPACING = 8;
+const MAX_WIDTH = 1100;
 
 export interface DialogueOptions {
   /** Optional speaker name shown in a tab above the text. */
@@ -25,6 +28,7 @@ export interface DialogueOptions {
 
 export class DialogueBox {
   private readonly container: Phaser.GameObjects.Container;
+  private readonly frame: Phaser.GameObjects.Graphics;
   private readonly text: Phaser.GameObjects.Text;
   private readonly speakerText: Phaser.GameObjects.Text;
   private readonly advanceArrow: Phaser.GameObjects.Text;
@@ -34,28 +38,18 @@ export class DialogueBox {
   private revealed = 0;
   private revealTimer?: Phaser.Time.TimerEvent;
   private arrowTween?: Phaser.Tweens.Tween;
-  /** In-flight close animation, so a re-show can cancel it. */
   private closeTween?: Phaser.Tweens.Tween;
   private onClose?: () => void;
-  private readonly wrapWidth: number;
+
+  private boxWidth = 0;
+  private boxHeight = 0;
+  private wrapWidth = 0;
+  private restY = 0;
 
   private _visible = false;
 
   constructor(private readonly scene: Phaser.Scene) {
-    const margin = SPACING.hudMargin;
-    const width = VIEWPORT.width - margin * 2;
-    const boxY = VIEWPORT.height - BOX_HEIGHT - margin;
-
-    const frame = scene.add.graphics();
-    // Drop shadow, dark outline, light fill — the classic three-layer GBA box.
-    frame.fillStyle(hex(COLORS.dialogueBoxShadow), 0.5);
-    frame.fillRoundedRect(3, 3, width, BOX_HEIGHT, 6);
-    frame.fillStyle(hex(COLORS.dialogueBoxBorder), 1);
-    frame.fillRoundedRect(0, 0, width, BOX_HEIGHT, 6);
-    frame.fillStyle(hex(COLORS.dialogueBoxBg), 1);
-    frame.fillRoundedRect(3, 3, width - 6, BOX_HEIGHT - 6, 4);
-    frame.lineStyle(1, hex(COLORS.dialogueBoxShadow), 1);
-    frame.strokeRoundedRect(6, 6, width - 12, BOX_HEIGHT - 12, 3);
+    this.frame = scene.add.graphics();
 
     this.text = scene.add
       .text(SPACING.dialogueBoxPadding, SPACING.dialogueBoxPadding, '', {
@@ -67,63 +61,105 @@ export class DialogueBox {
       .setOrigin(0, 0);
 
     this.speakerText = scene.add
-      .text(SPACING.dialogueBoxPadding, -9, '', {
+      .text(SPACING.dialogueBoxPadding, -15, '', {
         fontFamily: TYPOGRAPHY.dialogueFont,
         fontSize: `${TYPOGRAPHY.hudFontSize}px`,
-        color: COLORS.dialogueBoxBg,
-        backgroundColor: COLORS.dialogueBoxBorder,
-        padding: { x: 5, y: 2 },
+        color: COLORS.hudText,
+        backgroundColor: COLORS.dialogueBoxAccent,
+        padding: { x: 10, y: 5 },
       })
       .setOrigin(0, 0)
       .setVisible(false);
 
     this.advanceArrow = scene.add
-      .text(width - 16, BOX_HEIGHT - 20, '▼', {
+      .text(0, 0, '▼', {
         fontFamily: TYPOGRAPHY.dialogueFont,
-        fontSize: '10px',
-        color: COLORS.dialogueBoxText,
+        fontSize: '16px',
+        color: COLORS.dialogueBoxAccent,
       })
       .setOrigin(0.5)
       .setVisible(false);
 
     this.container = scene.add
-      .container(margin, boxY, [frame, this.text, this.speakerText, this.advanceArrow])
+      .container(0, 0, [this.frame, this.text, this.speakerText, this.advanceArrow])
       .setDepth(1000)
       .setVisible(false);
 
-    // Wrap width is fixed by the box, not by the string.
-    this.wrapWidth = width - SPACING.dialogueBoxPadding * 2;
+    this.layout();
+    scene.scale.on(Phaser.Scale.Events.RESIZE, this.layout, this);
+    scene.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      scene.scale.off(Phaser.Scale.Events.RESIZE, this.layout, this);
+    });
+  }
+
+  /** Rebuild geometry for the current canvas size. */
+  private layout(): void {
+    const { width, height } = this.scene.scale.gameSize;
+    if (width === 0 || height === 0) return;
+
+    const margin = SPACING.hudMargin;
+    this.boxWidth = Math.min(width - margin * 2, MAX_WIDTH);
+    this.boxHeight = Math.max(
+      120,
+      SPACING.dialogueBoxPadding * 2 + LINES_PER_PAGE * (TYPOGRAPHY.dialogueFontSize + LINE_SPACING),
+    );
+    this.wrapWidth = this.boxWidth - SPACING.dialogueBoxPadding * 2;
+    this.restY = height - this.boxHeight - margin;
+
+    this.container.x = Math.round((width - this.boxWidth) / 2);
+    this.container.y = this._visible ? this.restY : height + 8;
+
+    this.drawFrame();
     this.text.setWordWrapWidth(this.wrapWidth, true);
+    this.advanceArrow.setPosition(this.boxWidth - 28, this.boxHeight - 26);
+  }
+
+  private drawFrame(): void {
+    const w = this.boxWidth;
+    const h = this.boxHeight;
+    const g = this.frame;
+    g.clear();
+
+    // soft drop shadow
+    g.fillStyle(0x000000, 0.28);
+    g.fillRoundedRect(4, 7, w, h, 16);
+    // dark outer shell
+    g.fillStyle(hex(COLORS.dialogueBoxBorder), 1);
+    g.fillRoundedRect(0, 0, w, h, 16);
+    // light panel
+    g.fillStyle(hex(COLORS.dialogueBoxBg), 1);
+    g.fillRoundedRect(3, 3, w - 6, h - 6, 14);
+    // accent rule along the top — the one bit of colour
+    g.fillStyle(hex(COLORS.dialogueBoxAccent), 1);
+    g.fillRoundedRect(3, 3, w - 6, 5, 3);
+    // hairline inset
+    g.lineStyle(1, hex(COLORS.pavingDark), 0.45);
+    g.strokeRoundedRect(12, 15, w - 24, h - 27, 8);
   }
 
   get isVisible(): boolean {
     return this._visible;
   }
 
-  /** True while text is still typing out — Space should skip rather than advance. */
   get isRevealing(): boolean {
     const page = this.pages[this.pageIndex] ?? '';
     return this.revealed < page.length;
   }
 
-  /**
-   * Show dialogue. `text` may contain '|' as an explicit page break, which is
-   * how map authors split lines in Tiled without needing a script.
-   */
+  /** `text` may contain '|' as an explicit page break. */
   show(text: string, options: DialogueOptions = {}): void {
     this.onClose = options.onClose;
     this.pages = this.paginate(text);
     this.pageIndex = 0;
 
     if (options.speaker) {
-      this.speakerText.setText(options.speaker).setVisible(true);
+      this.speakerText.setText(options.speaker.toUpperCase()).setVisible(true);
     } else {
       this.speakerText.setVisible(false);
     }
 
-    // A show() landing inside the 180ms close animation must cancel it. If the
-    // close tween is left to complete it hides the container and clears the
-    // text while _visible is true — an invisible box that still eats Space.
+    // A show() landing inside the close animation must cancel it, or that
+    // tween completes and hides the container while _visible is true.
     const closing = this.closeTween !== undefined;
     this.closeTween?.stop();
     this.closeTween = undefined;
@@ -133,12 +169,10 @@ export class DialogueBox {
     this.container.setVisible(true);
 
     if (!wasVisible || closing) {
-      // Slide up from below the screen edge.
-      const restY = VIEWPORT.height - BOX_HEIGHT - SPACING.hudMargin;
-      this.container.y = VIEWPORT.height + 4;
+      this.container.y = this.scene.scale.gameSize.height + 8;
       this.scene.tweens.add({
         targets: this.container,
-        y: restY,
+        y: this.restY,
         duration: UI.dialogue.slideMs,
         ease: UI.dialogue.slideEase,
       });
@@ -147,10 +181,7 @@ export class DialogueBox {
     this.startReveal();
   }
 
-  /**
-   * Space handler. Returns true if the box consumed the press — the caller uses
-   * that to keep the world from also reacting to the same keypress.
-   */
+  /** Space handler. Returns true if the box consumed the press. */
   advance(): boolean {
     if (!this._visible) return false;
 
@@ -180,7 +211,7 @@ export class DialogueBox {
 
     this.closeTween = this.scene.tweens.add({
       targets: this.container,
-      y: VIEWPORT.height + 4,
+      y: this.scene.scale.gameSize.height + 8,
       duration: UI.dialogue.slideMs,
       ease: UI.dialogue.slideEase,
       onComplete: () => {
@@ -196,12 +227,10 @@ export class DialogueBox {
 
   // -- internals -----------------------------------------------------------
 
-  /** Split on explicit breaks, wrap each, then chunk into 3-line pages. */
   private paginate(raw: string): string[] {
     const pages: string[] = [];
     // startReveal() disables wrapping to reveal against pre-wrapped text, so
-    // re-enable it here before measuring — otherwise the second and every
-    // later show() would paginate against an unwrapped string.
+    // re-enable it before measuring.
     this.text.setWordWrapWidth(this.wrapWidth, true);
     for (const segment of raw.split('|')) {
       const trimmed = segment.trim();
@@ -221,14 +250,12 @@ export class DialogueBox {
 
     this.revealed = 0;
     this.text.setText('');
-    // Text is already wrapped into the page string; don't wrap again.
     this.text.setWordWrapWidth(0, false);
 
     const page = this.pages[this.pageIndex] ?? '';
 
-    // Guard the empty page before scheduling: `repeat: -1` means INFINITE in
-    // Phaser, so a blank page (whitespace-only text, or a stray '|') would spin
-    // the reveal timer forever and stack an arrow tween every 30ms.
+    // Guard the empty page: `repeat: -1` means INFINITE in Phaser, so a blank
+    // page would spin the timer forever and stack an arrow tween every 30ms.
     if (page.length === 0) {
       this.showAdvanceArrow();
       return;
@@ -255,12 +282,13 @@ export class DialogueBox {
   }
 
   private showAdvanceArrow(): void {
-    this.advanceArrow.setVisible(true).setY(BOX_HEIGHT - 20);
+    const restY = this.boxHeight - 26;
+    this.advanceArrow.setVisible(true).setY(restY);
     this.arrowTween?.stop();
     this.arrowTween = this.scene.tweens.add({
       targets: this.advanceArrow,
-      y: BOX_HEIGHT - 17,
-      duration: 400,
+      y: restY + 4,
+      duration: 420,
       yoyo: true,
       repeat: -1,
       ease: 'Sine.easeInOut',

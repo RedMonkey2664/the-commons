@@ -196,21 +196,23 @@ try {
 
   // --- walking propagates -------------------------------------------------
   console.log('\nmovement sync');
-  await holdKey(alpha, 'KeyW', 600);
+  // West along the plaza from the shared spawn: clear of the fountain rim,
+  // the benches and the welcome sign.
+  await holdKey(alpha, 'KeyA', 600);
   a = await netState(alpha);
   b = await waitFor(() => netState(beta), (s) => sameTile(s.remotes[0], a.tile));
 
-  check('A actually moved', a.tile.y < 12, `y=${a.tile.y}`);
+  check('A actually moved', a.tile.x < 19, `x=${a.tile.x}`);
   check("B's copy of A matches A's tile", sameTile(b.remotes[0], a.tile),
     `B saw ${JSON.stringify(b.remotes[0])}, A is ${JSON.stringify(a.tile)}`);
-  check("B's copy of A faces up", b.remotes[0]?.facing === 'up', b.remotes[0]?.facing);
+  check("B's copy of A faces left", b.remotes[0]?.facing === 'left', b.remotes[0]?.facing);
 
   // A must not have moved B.
-  check('A is not affected by B', b.tile.x === 15 && b.tile.y === 12, JSON.stringify(b.tile));
+  check('A is not affected by B', b.tile.x === 19 && b.tile.y === 20, JSON.stringify(b.tile));
 
   // --- turning in place propagates ---------------------------------------
   console.log('\nfacing sync');
-  await holdKey(alpha, 'KeyA', 40); // brief: turn without committing a step
+  await holdKey(alpha, 'KeyW', 40); // brief: turn without committing a step
   a = await netState(alpha);
   b = await waitFor(() => netState(beta), (s) => s.remotes[0]?.facing === a.facing);
   check("B sees A's facing after a turn", b.remotes[0]?.facing === a.facing,
@@ -218,13 +220,13 @@ try {
 
   // --- server-authoritative collision ------------------------------------
   console.log('\nserver-authoritative collision');
-  // Walk B east into sign_welcome at (16,12) from spawn (15,12).
+  // Walk B east into sign_welcome at (20,20) from spawn (19,20).
   await holdKey(beta, 'KeyD', 500);
   b = await netState(beta);
   a = await waitFor(() => netState(alpha), (s) => s.remotes[0]?.facing === 'right');
 
-  check('B did not walk through the signpost', b.tile.x === 15, `x=${b.tile.x}`);
-  check("A's copy of B also stayed put", a.remotes[0]?.x === 15, `x=${a.remotes[0]?.x}`);
+  check('B did not walk through the signpost', b.tile.x === 19, `x=${b.tile.x}`);
+  check("A's copy of B also stayed put", a.remotes[0]?.x === 19, `x=${a.remotes[0]?.x}`);
   check("A sees B turned to face the obstacle", a.remotes[0]?.facing === 'right', a.remotes[0]?.facing);
 
   // --- a client cannot set its own position ------------------------------
@@ -241,13 +243,13 @@ try {
 
   // A never saw the bogus position, because it was never sent.
   a = await netState(alpha);
-  check("the forced position never reached A", a.remotes[0]?.x === 15, `A saw x=${a.remotes[0]?.x}`);
+  check("the forced position never reached A", a.remotes[0]?.x === 19, `A saw x=${a.remotes[0]?.x}`);
 
   // Now B sends a legitimate intent. The server computes from ITS position.
   await holdKey(beta, 'KeyW', 200);
-  b = await waitFor(() => netState(beta), (s) => s.tile.x === 15, 5000);
-  check('server overruled the forged position', b.tile.x === 15, JSON.stringify(b.tile));
-  check('server put B back on its own authoritative column', b.tile.y <= 12 && b.tile.y >= 10, JSON.stringify(b.tile));
+  b = await waitFor(() => netState(beta), (s) => s.tile.x === 19, 5000);
+  check('server overruled the forged position', b.tile.x === 19, JSON.stringify(b.tile));
+  check('server put B back on its own authoritative column', b.tile.y <= 20 && b.tile.y >= 18, JSON.stringify(b.tile));
 
   // --- screenshots --------------------------------------------------------
   const shotDir = resolve(repoRoot, 'tools', 'screenshots');

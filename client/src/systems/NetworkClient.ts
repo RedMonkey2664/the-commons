@@ -49,8 +49,25 @@ export interface NetworkHandlers {
   onLeave?: (code: number) => void;
 }
 
-export const DEFAULT_SERVER_URL =
-  (import.meta.env['VITE_SERVER_URL'] as string | undefined) ?? 'ws://localhost:2567';
+/**
+ * Server URL, in priority order:
+ *   1. `localStorage['commons.serverUrl']` — a runtime override, so a client can
+ *      be pointed at a staging server (or a deliberately dead port, which is how
+ *      the offline-fallback test forces a connection failure) without a rebuild.
+ *   2. VITE_SERVER_URL at build time.
+ *   3. Local development default.
+ */
+export function resolveServerUrl(): string {
+  try {
+    const override = localStorage.getItem('commons.serverUrl');
+    if (override) return override;
+  } catch {
+    /* private windows throw on storage access; fall through */
+  }
+  return (import.meta.env['VITE_SERVER_URL'] as string | undefined) ?? 'ws://localhost:2567';
+}
+
+export const DEFAULT_SERVER_URL = 'ws://localhost:2567';
 
 export class NetworkClient {
   private readonly client: Client;
@@ -60,7 +77,7 @@ export class NetworkClient {
   /** Monotonic intent counter, echoed back by the server as `lastSeq`. */
   private seq = 0;
 
-  constructor(serverUrl: string = DEFAULT_SERVER_URL) {
+  constructor(serverUrl: string = resolveServerUrl()) {
     this.client = new Client(serverUrl);
   }
 
