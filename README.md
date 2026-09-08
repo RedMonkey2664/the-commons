@@ -417,10 +417,22 @@ VITE_SERVER_URL=wss://your-server.onrender.com npm run build --workspace client
 # publishes client/dist — on Vercel, set VITE_SERVER_URL then redeploy
 ```
 
-`client/vercel.json` sets the build command, output directory and an SPA
-rewrite. Point the Vercel project at the repo root, not at `client/` — the
-build needs the workspace root to resolve `@commons/shared` and the repo-level
-`assets/` folder that supplies maps and tilesets.
+Configure the Vercel project in its dashboard rather than with a committed
+`vercel.json`. A checked-in config silently overrides dashboard settings when
+it lands at the deployment root, which is a rude thing to do to a deployment
+that already works:
+
+| Setting | Value |
+|---|---|
+| Root Directory | the repo root, **not** `client/` |
+| Build Command | `npm run build --workspace client` |
+| Output Directory | `client/dist` |
+| Environment | `VITE_SERVER_URL = wss://your-server-host` |
+
+Root Directory has to be the repo root because the build resolves
+`@commons/shared` through the workspace and takes its `publicDir` from the
+repo-level `assets/` folder — the maps and tilesets live outside `client/` so
+the server can read the same map JSON for authoritative collision.
 
 ### What is NOT verified
 
@@ -430,7 +442,7 @@ starts is tested — `phase7_deploy.mjs` runs the same start command with the sa
 environment variables against a real production bundle — but the image build
 itself is not. Treat your first `docker build` as the test.
 
-`render.yaml`, `fly.toml` and `client/vercel.json` are likewise written from the
+`render.yaml` and `fly.toml` are likewise written from the
 providers' documented schemas and have not been run against those providers.
 
 ## Cosmetics
