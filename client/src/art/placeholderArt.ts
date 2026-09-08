@@ -16,6 +16,7 @@
  */
 
 import Phaser from 'phaser';
+import type { HatStyle } from '@commons/shared';
 import { COLORS, SPACING, mix } from '@commons/shared';
 
 const T = SPACING.tile; // 32
@@ -1035,6 +1036,72 @@ export function generateTileset(scene: Phaser.Scene): void {
 // Characters — 32x64
 // ---------------------------------------------------------------------------
 
+
+/**
+ * A hat, drawn over the hair.
+ *
+ * Sits entirely above the eye row (oy+17) in every direction so it can never
+ * obscure the facing cue — the direction a character is looking is load-bearing
+ * information in a grid game, and no cosmetic is allowed to cost the player
+ * that. Facing "up" is the back of the head, so peaks and near-side ear cups
+ * disappear there rather than being drawn on the wrong side of the skull.
+ */
+function drawHat(
+  ctx: Ctx,
+  cx: number,
+  oy: number,
+  color: string,
+  style: HatStyle,
+  direction: keyof typeof CHAR_ROWS,
+) {
+  const light = mix(color, '#FFFFFF', 0.3);
+  const dark = mix(color, '#000000', 0.35);
+
+  switch (style) {
+    case 'cap': {
+      rect(ctx, cx - 8, oy + 4, 16, 7, color);
+      rect(ctx, cx - 8, oy + 4, 16, 2, light);
+      rect(ctx, cx - 8, oy + 9, 16, 2, dark);
+      // The peak follows the facing, which is what makes it read as worn. It
+      // overhangs the head by a pixel on each side: a brim flush with the skull
+      // just reads as a coloured band.
+      if (direction === 'down') rect(ctx, cx - 9, oy + 11, 18, 2, dark);
+      if (direction === 'left') rect(ctx, cx - 14, oy + 9, 7, 2, dark);
+      if (direction === 'right') rect(ctx, cx + 7, oy + 9, 7, 2, dark);
+      break;
+    }
+    case 'beanie': {
+      // Nothing here may be drawn above oy: frames are stacked in one sheet, so
+      // a bobble at oy-1 bleeds into the bottom of the frame ABOVE it — which
+      // showed up as a blue speck at the feet of the facing-down walk cycle.
+      rect(ctx, cx - 2, oy, 4, 3, light);
+      rect(ctx, cx - 6, oy + 2, 12, 3, color);
+      rect(ctx, cx - 6, oy + 2, 12, 1, light);
+      rect(ctx, cx - 8, oy + 4, 16, 8, color);
+      // Folded brim, a shade lighter so the fold reads at this size.
+      rect(ctx, cx - 8, oy + 10, 16, 3, light);
+      rect(ctx, cx - 8, oy + 12, 16, 1, dark);
+      break;
+    }
+    case 'headphones': {
+      // Hair stays visible: these are worn, not a hat.
+      rect(ctx, cx - 7, oy + 3, 14, 3, color);
+      rect(ctx, cx - 7, oy + 3, 14, 1, light);
+      rect(ctx, cx - 8, oy + 5, 2, 4, dark);
+      rect(ctx, cx + 6, oy + 5, 2, 4, dark);
+
+      const cup = (x: number) => {
+        rect(ctx, x, oy + 8, 4, 7, color);
+        rect(ctx, x, oy + 8, 1, 7, light);
+        rect(ctx, x, oy + 14, 4, 1, dark);
+      };
+      if (direction !== 'right') cup(cx - 11);
+      if (direction !== 'left') cup(cx + 7);
+      break;
+    }
+  }
+}
+
 function drawCharacterFrame(
   ctx: Ctx,
   ox: number,
@@ -1042,6 +1109,7 @@ function drawCharacterFrame(
   bodyColor: string,
   direction: keyof typeof CHAR_ROWS,
   step: -1 | 0 | 1,
+  hat?: HatPaint,
 ) {
   const skin = COLORS.skin;
   const skinShade = mix(skin, '#000000', 0.18);
@@ -1117,6 +1185,8 @@ function drawCharacterFrame(
       break;
   }
 
+  if (hat) drawHat(ctx, cx, oy, hat.color, hat.style, direction);
+
   // soft outline pass, which is what stops the sprite dissolving into the map
   ctx.save();
   ctx.strokeStyle = outline;
@@ -1126,8 +1196,19 @@ function drawCharacterFrame(
   ctx.restore();
 }
 
+/** What a character is wearing on its head, if anything. */
+export interface HatPaint {
+  color: string;
+  style: HatStyle;
+}
+
 /** 4 directions x 4 frames. Frame index = row * 4 + column. */
-export function generateCharacterSheet(scene: Phaser.Scene, key: string, bodyColor: string): void {
+export function generateCharacterSheet(
+  scene: Phaser.Scene,
+  key: string,
+  bodyColor: string,
+  hat?: HatPaint,
+): void {
   const w = CHAR_FRAME_WIDTH * CHAR_FRAMES_PER_ROW;
   const h = CHAR_FRAME_HEIGHT * 4;
   const texture = createCanvas(scene, key, w, h);
@@ -1140,7 +1221,7 @@ export function generateCharacterSheet(scene: Phaser.Scene, key: string, bodyCol
     for (let col = 0; col < CHAR_FRAMES_PER_ROW; col += 1) {
       const ox = col * CHAR_FRAME_WIDTH;
       const oy = row * CHAR_FRAME_HEIGHT;
-      drawCharacterFrame(ctx, ox, oy, bodyColor, direction, steps[col] ?? 0);
+      drawCharacterFrame(ctx, ox, oy, bodyColor, direction, steps[col] ?? 0, hat);
       texture.add(row * CHAR_FRAMES_PER_ROW + col, 0, ox, oy, CHAR_FRAME_WIDTH, CHAR_FRAME_HEIGHT);
     }
   });
@@ -1527,13 +1608,21 @@ export function generateInteractableSprites(scene: Phaser.Scene): void {
  * Generated on demand and cached by key, so choosing a cosmetic does not
  * require pre-rendering every combination at boot.
  */
-export function outfitTextureKey(color: string): string {
-  return `char_outfit_${color.replace('#', '')}`;
+export function outfitTextureKey(color: string, hat?: HatPaint): string {
+  const base = `char_outfit_${color.replace('#', '')}`;
+  return hat ? `${base}_${hat.style}${hat.color.replace('#', '')}` : base;
 }
 
-export function ensureOutfitSheet(scene: Phaser.Scene, color: string): string {
-  const key = outfitTextureKey(color);
-  if (!scene.textures.exists(key)) generateCharacterSheet(scene, key, color);
+/**
+ * The sheet for one outfit + hat combination, generated once and cached.
+ *
+ * Keyed by the full combination rather than by outfit alone: two players in
+ * the same shirt and different hats are two textures, and re-picking a
+ * cosmetic you have worn before costs nothing.
+ */
+export function ensureOutfitSheet(scene: Phaser.Scene, color: string, hat?: HatPaint): string {
+  const key = outfitTextureKey(color, hat);
+  if (!scene.textures.exists(key)) generateCharacterSheet(scene, key, color, hat);
   return key;
 }
 

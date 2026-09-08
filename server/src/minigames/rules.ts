@@ -58,6 +58,16 @@ export interface MinigameRules {
   buildRound(index: number): BuiltRound | null;
 
   /**
+   * Is this payload a plausible answer at all?
+   *
+   * Separate from score() because the ROOM needs to know before it marks a
+   * player as having answered. The rules refactor briefly lost this, and any
+   * malformed or stale message then burned a player's single answer — and
+   * could end the round early for everyone.
+   */
+  isValidAnswer(secret: unknown, answer: unknown): boolean;
+
+  /**
    * Score one answer.
    *
    * @param elapsedMs time from the round starting to the answer ARRIVING at the
@@ -108,6 +118,12 @@ class TriviaRules implements MinigameRules {
       } satisfies TriviaSecret,
       durationMs: TRIVIA_RULES.roundMs,
     };
+  }
+
+  isValidAnswer(secret: unknown, answer: unknown): boolean {
+    const { optionCount } = secret as TriviaSecret;
+    const index = Number((answer as { index?: unknown })?.index);
+    return Number.isInteger(index) && index >= 0 && index < optionCount;
   }
 
   score(secret: unknown, answer: unknown, elapsedMs: number, durationMs: number): ScoredAnswer {
@@ -174,6 +190,11 @@ class ReactionRules implements MinigameRules {
       durationMs: goAfterMs + REACTION_TAP_RULES.windowMs,
       cues: [{ atMs: goAfterMs, payload: { go: true } }],
     };
+  }
+
+  isValidAnswer(_secret: unknown, answer: unknown): boolean {
+    // A tap carries no data beyond having happened.
+    return (answer as { tapped?: unknown } | null)?.tapped === true;
   }
 
   score(secret: unknown, _answer: unknown, elapsedMs: number): ScoredAnswer {

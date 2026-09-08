@@ -135,6 +135,18 @@ export abstract class ZoneScene extends Phaser.Scene {
     // every field assigned before anything can fire.
     this.controls = new InputController(this);
     this.setupChatInput();
+
+    // Browsers block audio until a gesture, and every sound bails while the
+    // context is suspended. Unlocking only on the interact key left footsteps,
+    // bumps, chat and UI silent for anyone who just walked around — so ANY
+    // input counts as the gesture.
+    const unlockAudio = () => sfx.unlock();
+    this.input.keyboard?.on('keydown', unlockAudio);
+    this.input.on('pointerdown', unlockAudio);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.input.keyboard?.off('keydown', unlockAudio);
+      this.input.off('pointerdown', unlockAudio);
+    });
     this.interactions = new InteractionSystem(this, this.zone, this.zoneMap, {
       setBlocked: (blocked) => this.player.setBlocked(blocked),
       transitionTo: (zoneId) => this.transitionTo(zoneId),
@@ -199,10 +211,13 @@ export abstract class ZoneScene extends Phaser.Scene {
       // Unlock facts come from the server; the RULES are evaluated client-side
       // in shared/cosmetics.ts. Cosmetic-only, so that split costs nothing.
       void fetchProgress().then((progress) => {
-        if (!progress) return;
+        // A request that resolves after the player walked out would otherwise
+        // install a callback bound to a destroyed scene and player.
+        if (!progress || !this.scene.isActive()) return;
         ui.friends?.setCosmetics(progress, (cosmetic) => {
-          const texture = ensureOutfitSheet(this, cosmetic.color);
-          this.player?.setTexture(texture);
+          // Re-derived from BOTH slots rather than from the cosmetic just
+          // clicked: picking a hat must not silently discard the outfit.
+          this.player?.setTexture(this.outfitTexture());
           ui.popup?.show(`Wearing ${cosmetic.displayName}`, { iconColor: cosmetic.color });
         });
       });
@@ -267,10 +282,6 @@ export abstract class ZoneScene extends Phaser.Scene {
     this.player.update(time, this.controls.heldDirection());
 
     if (this.controls.justPressed('interact')) {
-      // Browsers block audio until a gesture. Interacting IS one, so this is
-      // where the sound engine comes alive rather than at boot where it would
-      // silently fail and stay dead.
-      sfx.unlock();
       this.interactions.tryInteract(this.player.tile, this.player.facing);
     }
 
@@ -539,10 +550,19 @@ export abstract class ZoneScene extends Phaser.Scene {
    * Cosmetic-only: this changes the colour of a sprite and nothing else.
    */
   private outfitTexture(): string {
-    const chosen = session.cosmetic('outfit');
-    const cosmetic = chosen ? getCosmetic(chosen) : undefined;
-    if (!cosmetic) return session.spriteKey;
-    return ensureOutfitSheet(this, cosmetic.color);
+    const outfitId = session.cosmetic('outfit');
+    const hatId = session.cosmetic('hat');
+    const outfit = outfitId ? getCosmetic(outfitId) : undefined;
+    const hat = hatId ? getCosmetic(hatId) : undefined;
+
+    // Nothing chosen in either slot: the default sheet, untouched.
+    if (!outfit && !hat) return session.spriteKey;
+
+    return ensureOutfitSheet(
+      this,
+      outfit?.color ?? COLORS.playerBody,
+      hat?.style ? { color: hat.color, style: hat.style } : undefined,
+    );
   }
 
   /** Hook for zone-specific setup (Pomodoro pods, jukebox, cabinets). */

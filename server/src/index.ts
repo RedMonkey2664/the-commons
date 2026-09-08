@@ -220,12 +220,16 @@ app.get('/progress/:userId', async (request, response) => {
     const store = getStore();
     const userId = request.params.userId;
 
+    // Asked directly rather than found in a top-N board: a player outside that
+    // slice would otherwise report no score at all and could never unlock a
+    // score-gated cosmetic.
     const bestScores: Record<string, number> = {};
-    for (const minigame of MINIGAMES) {
-      const board = await store.topScores(minigame.id, 1000);
-      const mine = board.find((row) => row.userId === userId);
-      if (mine) bestScores[minigame.id] = mine.score;
-    }
+    await Promise.all(
+      MINIGAMES.map(async (minigame) => {
+        const best = await store.bestScore(minigame.id, userId);
+        if (best > 0) bestScores[minigame.id] = best;
+      }),
+    );
 
     const [totalPlays, study] = await Promise.all([
       store.countPlays(userId),

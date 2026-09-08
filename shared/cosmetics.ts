@@ -23,12 +23,23 @@
 
 export type CosmeticSlot = 'outfit' | 'hat';
 
+/** Hat shapes the character renderer knows how to draw. */
+export type HatStyle = 'cap' | 'beanie' | 'headphones';
+
 export interface Cosmetic {
   id: string;
   slot: CosmeticSlot;
   displayName: string;
   /** Body colour for outfits; accent colour for hats. */
   color: string;
+  /**
+   * Which shape the renderer draws, for hats.
+   *
+   * Named here rather than switched on `id` in the art code so a new hat is a
+   * new entry in this list plus one shape, never an edit to a character
+   * drawing routine that knows about specific cosmetics.
+   */
+  style?: HatStyle;
   /** How it is earned. Shown in the UI so the requirement is never a mystery. */
   requirement: CosmeticRequirement;
 }
@@ -76,6 +87,7 @@ export const COSMETICS: Cosmetic[] = [
     slot: 'hat',
     displayName: 'Cap',
     color: '#E8613C',
+    style: 'cap',
     requirement: { kind: 'plays', count: 5 },
   },
   {
@@ -83,6 +95,7 @@ export const COSMETICS: Cosmetic[] = [
     slot: 'hat',
     displayName: 'Beanie',
     color: '#4A9DD9',
+    style: 'beanie',
     requirement: { kind: 'plays', count: 12 },
   },
 
@@ -93,6 +106,7 @@ export const COSMETICS: Cosmetic[] = [
     slot: 'hat',
     displayName: 'Headphones',
     color: '#3E8E6F',
+    style: 'headphones',
     requirement: { kind: 'study', minutes: 60 },
   },
 ];

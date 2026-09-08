@@ -289,28 +289,113 @@ try {
     cosmetics !== null && typeof cosmetics.totalPlays === 'number',
     JSON.stringify(cosmetics));
 
-  const unlockState = await alpha.page.evaluate(() => {
-    const ui = window.__COMMONS__.game.scene.getScene('UIScene');
-    void ui;
-    return null;
-  });
-  void unlockState;
-
-  // Apply a cosmetic and confirm the player is re-skinned.
-  const skin = await alpha.page.evaluate((keys) => {
-    const game = window.__COMMONS__.game;
-    const key = keys.find((k) => game.scene.isActive(k));
-    const scene = game.scene.getScene(key);
-    const before = scene.player.sprite.texture.key;
-    scene.player.setTexture(
-      // Same helper the picker uses.
-      window.__COMMONS__.game.scene.getScene(key).outfitTexture
-        ? 'char_outfit_3E8E6F'
-        : 'char_player',
+  // Every cosmetic must be reachable through the UI and visible on the sheet.
+  // The earlier version of this block called setTexture directly and asserted
+  // nothing, which is how three hats shipped with no renderer and no row in
+  // the picker. Everything below goes through what a player actually clicks.
+  await alpha.page.evaluate(() => {
+    const panel = window.__COMMONS__.game.scene.getScene('UIScene').friends;
+    // Server-held facts, faked generously so every requirement is met. The
+    // real ZoneScene callback is kept, so the re-skin path is the real one.
+    panel.setCosmetics(
+      {
+        bestScores: { memory_match: 9999, retro_runner: 9999, trivia_blitz: 9999 },
+        totalPlays: 999,
+        studyMinutes: 999,
+      },
+      panel.onCosmeticChosen,
     );
-    return { before, after: scene.player.sprite.texture.key };
-  }, ZONE_KEYS);
-  void skin;
+  });
+
+  await alpha.page.keyboard.press('Escape');
+  await alpha.page.waitForTimeout(400);
+
+  check('ESC opens the friends panel',
+    await alpha.page.evaluate(() => window.__COMMONS__.game.scene.getScene('UIScene').friends.isOpen) === true);
+
+  // Screen coordinates of every swatch, read off the live display list. Counts
+  // are derived, never hardcoded — a new cosmetic must not fail this test.
+  const swatches = await alpha.page.evaluate(() => {
+    const panel = window.__COMMONS__.game.scene.getScene('UIScene').friends;
+    return panel.cosmeticRow.list
+      .filter((o) => o.type === 'Rectangle')
+      .map((o) => {
+        const m = o.getWorldTransformMatrix();
+        return { x: Math.round(m.tx + o.width / 2), y: Math.round(m.ty + o.height / 2) };
+      });
+  });
+
+  const rowYs = [...new Set(swatches.map((s) => s.y))].sort((a, b) => a - b);
+  check('the picker renders one row per cosmetic slot', rowYs.length === 2, JSON.stringify(rowYs));
+
+  const outfitSwatches = swatches.filter((s) => s.y === rowYs[0]);
+  const hatSwatches = swatches.filter((s) => s.y === rowYs[1]);
+  check('the hat slot has swatches to click', hatSwatches.length > 0, String(hatSwatches.length));
+  check('every hat swatch is on screen',
+    hatSwatches.every((s) => s.x > 0 && s.x < 1280 && s.y > 0 && s.y < 820),
+    JSON.stringify(hatSwatches));
+
+  // Reads the hat band of frame 0 straight off the generated sheet. A hat that
+  // changes no pixels here is a reward the player can never see.
+  const bandOf = (page, key) =>
+    page.evaluate((k) => {
+      const src = window.__COMMONS__.game.textures.get(k).getSourceImage();
+      const c = document.createElement('canvas');
+      c.width = src.width;
+      c.height = src.height;
+      c.getContext('2d').drawImage(src, 0, 0);
+      // Frame 0 is the facing-down idle; rows 3..13 are hair and hat.
+      return [...c.getContext('2d').getImageData(8, 3, 16, 10).data].join(',');
+    }, key);
+
+  const bareBand = await bandOf(alpha.page, 'char_player');
+  const seenBands = new Set();
+
+  for (let i = 0; i < hatSwatches.length; i += 1) {
+    await alpha.page.mouse.click(hatSwatches[i].x, hatSwatches[i].y);
+    await alpha.page.waitForTimeout(280);
+
+    const worn = await alpha.page.evaluate((keys) => {
+      const game = window.__COMMONS__.game;
+      const scene = game.scene.getScene(keys.find((k) => game.scene.isActive(k)));
+      return {
+        texture: scene.player.sprite.texture.key,
+        hat: JSON.parse(localStorage.getItem('commons.session') || '{}').cosmetics?.hat,
+      };
+    }, ZONE_KEYS);
+
+    check(`hat ${i + 1} is remembered when clicked`, typeof worn.hat === 'string', String(worn.hat));
+
+    const band = await bandOf(alpha.page, worn.texture);
+    check(`hat ${i + 1} is actually drawn on the sheet`, band !== bareBand, worn.texture);
+    check(`hat ${i + 1} looks different from the others already worn`,
+      !seenBands.has(band), worn.texture);
+    seenBands.add(band);
+
+    // Clicking the worn hat again takes it off. Hats have no default, so
+    // without this the first hat a player tries would be permanent.
+    await alpha.page.mouse.click(hatSwatches[i].x, hatSwatches[i].y);
+    await alpha.page.waitForTimeout(280);
+    const off = await alpha.page.evaluate(
+      () => JSON.parse(localStorage.getItem('commons.session') || '{}').cosmetics?.hat,
+    );
+    check(`hat ${i + 1} can be taken off again`, off === undefined, String(off));
+  }
+
+  // The two slots are independent: picking one must not clear the other.
+  await alpha.page.mouse.click(outfitSwatches[outfitSwatches.length - 1].x,
+    outfitSwatches[outfitSwatches.length - 1].y);
+  await alpha.page.waitForTimeout(250);
+  await alpha.page.mouse.click(hatSwatches[0].x, hatSwatches[0].y);
+  await alpha.page.waitForTimeout(280);
+
+  const both = await alpha.page.evaluate(
+    () => JSON.parse(localStorage.getItem('commons.session') || '{}').cosmetics,
+  );
+  check('picking a hat keeps the outfit', Boolean(both?.outfit && both?.hat), JSON.stringify(both));
+
+  await alpha.page.keyboard.press('Escape');
+  await alpha.page.waitForTimeout(400);
 
   // --- ambient -------------------------------------------------------------
   console.log('\nambient');

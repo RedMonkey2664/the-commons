@@ -91,7 +91,8 @@ export class RhythmTapScene extends BaseMinigameScene {
     this.track = TRACKS[Math.floor(Math.random() * TRACKS.length)]!;
     this.notes = buildChart(this.track);
 
-    this.graphics = this.add.graphics().setDepth(3);
+    this.graphics = this.add.graphics();
+    this.playfield.add(this.graphics);
 
     this.trackText = this.add
       .text(0, 0, `${this.track.title} — ${this.track.bpm}bpm`, {
@@ -100,8 +101,8 @@ export class RhythmTapScene extends BaseMinigameScene {
         color: COLORS.hudText,
       })
       .setOrigin(0.5, 0)
-      .setDepth(4)
       .setAlpha(0.75);
+    this.playfield.add(this.trackText);
 
     this.comboText = this.add
       .text(0, 0, '', {
@@ -109,8 +110,8 @@ export class RhythmTapScene extends BaseMinigameScene {
         fontSize: '24px',
         color: COLORS.hudText,
       })
-      .setOrigin(0.5)
-      .setDepth(4);
+      .setOrigin(0.5);
+    this.playfield.add(this.comboText);
 
     this.judgementText = this.add
       .text(0, 0, '', {
@@ -118,8 +119,10 @@ export class RhythmTapScene extends BaseMinigameScene {
         fontSize: '20px',
         color: COLORS.hudAccent,
       })
-      .setOrigin(0.5)
-      .setDepth(4);
+      .setOrigin(0.5);
+    // Everything the game draws goes in the playfield, which showResults()
+    // clears — otherwise the frozen board sits on top of the leaderboard.
+    this.playfield.add(this.judgementText);
 
     for (let lane = 0; lane < RULES.lanes; lane += 1) {
       this.input.keyboard?.on(`keydown-${RULES.keys[lane]}`, () => this.hitLane(lane));
@@ -130,10 +133,25 @@ export class RhythmTapScene extends BaseMinigameScene {
     // Launching a minigame from a cabinet is itself a gesture, so audio is
     // already unlocked; this is belt and braces for a direct scene start.
     void this.audio.unlock().then(() => {
+      // Quitting during the unlock would otherwise start music with no scene
+      // left to stop it — an AudioContext and a scheduler nothing can reach,
+      // playing over the world forever.
+      if (!this.scene.isActive()) {
+        this.audio.destroy();
+        return;
+      }
+
       this.audio.setVolume(0.65);
-      this.audio.play(this.track, 0);
+
+      // The lead-in is SILENT, and the music starts when the chart does.
+      // Starting the audio immediately while dating note t=0 to the end of the
+      // lead-in put every note 2.6 seconds behind the beat — playing in time
+      // with what you could hear scored a miss on everything.
       this.startedAt = this.time.now + RULES.leadInMs;
       this.running = true;
+      this.time.delayedCall(RULES.leadInMs, () => {
+        if (this.running) this.audio.play(this.track, 0);
+      });
     });
   }
 

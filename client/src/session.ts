@@ -125,11 +125,13 @@ class Session {
     return this.state.cosmetics?.[slot];
   }
 
-  setCosmetic(slot: string, id: string): void {
-    this.state = {
-      ...this.state,
-      cosmetics: { ...(this.state.cosmetics ?? {}), [slot]: id },
-    };
+  /** Pass `undefined` to clear the slot — a hat has to be removable. */
+  setCosmetic(slot: string, id: string | undefined): void {
+    const cosmetics = { ...(this.state.cosmetics ?? {}) };
+    if (id === undefined) delete cosmetics[slot];
+    else cosmetics[slot] = id;
+
+    this.state = { ...this.state, cosmetics };
     write(this.state);
   }
 

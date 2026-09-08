@@ -89,15 +89,19 @@ export class RetroRunnerScene extends BaseMinigameScene {
   }
 
   onStart(_players: PlayerRef[]): void {
-    this.graphics = this.add.graphics().setDepth(3);
+    // In the playfield, which showResults() clears — otherwise the frozen
+    // crash frame and the HUD sit on top of the results and leaderboard.
+    this.graphics = this.add.graphics();
+    this.playfield.add(this.graphics);
+
     this.hudText = this.add
       .text(0, 0, '', {
         fontFamily: TYPOGRAPHY.dialogueFont,
         fontSize: `${TYPOGRAPHY.hudFontSize + 2}px`,
         color: COLORS.hudText,
       })
-      .setOrigin(0.5, 0)
-      .setDepth(4);
+      .setOrigin(0.5, 0);
+    this.playfield.add(this.hudText);
 
     this.reset();
 

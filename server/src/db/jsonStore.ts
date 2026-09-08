@@ -235,6 +235,14 @@ export class JsonStore implements Store {
     return [...bestByUser.values()].sort((a, b) => b.score - a.score).slice(0, limit);
   }
 
+  async bestScore(minigameId: string, userId: string): Promise<number> {
+    return this.data.scores.reduce(
+      (best, row) =>
+        row.minigameId === minigameId && row.userId === userId ? Math.max(best, row.score) : best,
+      0,
+    );
+  }
+
   async countPlays(userId: string): Promise<number> {
     return this.data.scores.filter((row) => row.userId === userId).length;
   }

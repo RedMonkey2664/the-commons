@@ -186,6 +186,11 @@ export class MinigameRoom extends Room<MinigameState> {
     const player = this.state.players.find((p) => p.id === client.sessionId);
     if (!player || player.answered) return; // first answer only; no changing it
 
+    // Validate BEFORE marking them as having answered: a malformed or stale
+    // message must not burn their one answer, nor end the round early for
+    // everyone else by completing the "all answered" check.
+    if (!this.rules.isValidAnswer(this.round.secret, message)) return;
+
     player.answered = true;
     // Timed on ARRIVAL, by the server's clock. A client-reported time could be
     // anything the client liked.

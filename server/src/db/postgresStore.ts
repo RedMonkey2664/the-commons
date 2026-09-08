@@ -265,6 +265,14 @@ export class PostgresStore implements Store {
       .slice(0, limit);
   }
 
+  async bestScore(minigameId: string, userId: string): Promise<number> {
+    const { rows } = await this.pool.query<{ best: string | null }>(
+      'select max(score)::text as best from high_scores where minigame_id = $1 and user_id = $2',
+      [minigameId, userId],
+    );
+    return Number(rows[0]?.best ?? 0);
+  }
+
   async countPlays(userId: string): Promise<number> {
     const { rows } = await this.pool.query<{ count: string }>(
       'select count(*)::text as count from high_scores where user_id = $1',

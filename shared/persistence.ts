@@ -113,6 +113,14 @@ export interface Store {
    * a five-round unlock reachable only by playing five different games.
    */
   countPlays(userId: string): Promise<number>;
+  /**
+   * One player's best score in one minigame, or 0.
+   *
+   * Deriving this from a top-N board missed anyone outside that slice — so a
+   * player ranked 1001st could never unlock a score-gated cosmetic — and made
+   * the progress endpoint scan a full board per minigame per request.
+   */
+  bestScore(minigameId: string, userId: string): Promise<number>;
 }
 
 /**

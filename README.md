@@ -9,18 +9,22 @@ The point is **presence, not progression** — see
 
 ---
 
-## Status: Phase 4 mostly complete
+## Status: Phase 5 complete, on placeholder art
 
 | Phase | Scope | State |
 |---|---|---|
 | **0** | Single-player skeleton: Town Square, WASD grid movement, collision, camera | **Done** — 24/24 smoke checks |
 | **1** | Colyseus server, multiplayer sync in Town Square | **Done** — 26/26 sync checks |
 | **2** | All zones + zone transitions + NPC dialogue + friends list | **Done** — 42/42 world checks |
-| **3** | Persistence, arcade minigames, study tracking, text chat | **Done** — 16/16 arcade checks |
+| **3** | Persistence, arcade minigames, study tracking, text chat | **Done** — 17/17 arcade checks |
 | **4** | Shared jukebox + voice policy | **Done** — 20/20 music checks |
+| **5** | Remaining minigames, cosmetics, ambient life, sound | **Done** — 37/37 polish checks |
 | 3a | Supabase auth + real accounts | **Blocked** — needs credentials |
 | 4a | Voice transport (LiveKit) | **Blocked** — needs credentials |
-| 5 | Real pixel art, remaining minigames, polish | Not started |
+| 5a | Real pixel art to replace the procedural placeholders | **Blocked** — needs source art |
+
+166 checks pass across the six suites. Every one drives a real browser against
+a real server and asserts on real game state; none of them stub the game.
 
 **Playable right now:** type a name and walk the whole town, play the arcade,
 and talk to whoever is in the room with you. Six zones —
@@ -32,15 +36,24 @@ a dialogue box; "!" bubbles mark anything interactable. Sit at a library focus
 pod and your status becomes `studying` — no start button, just sitting down.
 Esc opens the friends panel showing who is in the room with you.
 
-The Arcade has two working cabinets: **Memory Match** (solo) and **Trivia
-Blitz** (up to four players, scored by the server). Scores persist and come back
-as a leaderboard. Sitting at a focus pod accrues **study time**, timed by the
+The Arcade has five working cabinets: **Memory Match** and **Retro Runner**
+(solo), **Trivia Blitz** and **Reaction Tap** (up to four players, scored by the
+server), and **Rhythm Tap**, which charts itself from a jukebox track. Scores
+persist and come back as a leaderboard. Sitting at a focus pod accrues **study time**, timed by the
 server and written when you stand up. **Enter** opens chat — messages appear as
 bubbles over the speaker and in a log panel.
 
 The **Cafe jukebox** and **Park bandstand** play one shared queue per room.
 Everyone in the room hears the same track at the same point in it, including
 someone who walks in halfway through. Queue a track, or vote to skip.
+
+Play a few rounds or put in some study time and you unlock **cosmetics** — an
+outfit colour and a hat, picked from the friends panel and drawn onto your
+character. They change how you look and nothing else; locked ones stay visible
+with what earns them, so the arcade has a reason to be revisited without
+becoming a grind. Zones have **ambient life** — steam over the cafe counter,
+pages turning in the library, the bandstand pulsing in the park — and everything
+you do makes a quiet sound, all of it synthesised at runtime.
 
 Open a second browser and you see each other live, with nameplates, moving at
 the same 130ms-per-tile cadence, walking between zones, chatting, and each
@@ -83,6 +96,7 @@ node tools/phase1_sync.mjs   # two-client multiplayer sync test (boots server + 
 node tools/phase2_world.mjs   # walks every zone door and back (single-player)
 node tools/phase3_arcade.mjs  # arcade, chat and persistence
 node tools/phase4_music.mjs   # shared jukebox sync and voice policy
+node tools/phase5_polish.mjs  # remaining minigames, cosmetics, ambient
 node tools/capture_screens.mjs # screenshot the loading, title and world screens
 ```
 
@@ -309,14 +323,58 @@ key; it never learns what any game does. The base class owns presentation,
 Esc-to-quit, score reporting and the leaderboard, so a minigame implements only
 its own rules.
 
-**Solo games** (Memory Match) score client-side and submit over HTTP.
-**Multiplayer games** (Trivia Blitz) run their round in a Colyseus room: the
-server owns the question bank, the clock and the scoring, and clients receive
-questions with the answer *stripped*. The solo score endpoint refuses
-submissions for multiplayer games outright, so that rule cannot be bypassed by
-posting a result.
+**Solo games** (Memory Match, Retro Runner, Rhythm Tap) score client-side and
+submit over HTTP. **Multiplayer games** (Trivia Blitz, Reaction Tap) run their
+round in a Colyseus room: the server owns the secret, the clock and the scoring,
+and clients receive rounds with the answer *stripped* — Reaction Tap never sends
+the client the moment the light will turn, so there is nothing to read ahead.
+The solo score endpoint refuses submissions for multiplayer games outright, so
+that rule cannot be bypassed by posting a result.
+
+The room owns the lobby, the clock, the phases and persistence; the *rules* live
+behind a `MinigameRules` interface (`server/src/minigames/rules.ts`) that builds
+a round, validates an answer and scores it. A new multiplayer game is a new
+implementation of that interface, not an edit to the room.
 
 ---
+
+## Cosmetics
+
+06 asks for "high scores or milestones [to] unlock cosmetic character
+customization (hat, outfit colour)". Two things in that sentence shape the
+whole implementation.
+
+**Cosmetic only.** Nothing unlocked changes what a player can do. 11's first
+pillar is presence over performance, so an unlock that touched movement, study
+tracking or minigame odds would quietly turn a hangout into a progression game.
+
+**Not a grind.** Thresholds are reachable in a session or two. There is no
+currency, no streak, no daily anything, and one of the three hats is earned by
+study time rather than by scoring — so the Arcade is not the only thing that
+gives something back.
+
+Unlocks are **derived, never stored**. Given a player's best scores, play count
+and study minutes, the set of unlocked cosmetics is a pure function
+(`shared/cosmetics.ts`). Tuning a threshold needs no migration, and there is no
+"owned" list that can disagree with the facts. The server owns the facts and
+serves them from `/progress/:userId`; the client applies the rules, which is
+safe precisely because the stakes are cosmetic — the worst a tampered client
+achieves is wearing a colour it did not earn.
+
+Adding a cosmetic is one entry in `COSMETICS`. Hats name a `style` there rather
+than the renderer switching on an id, so the character art never learns about
+specific cosmetics:
+
+```ts
+{ id: 'hat_cap', slot: 'hat', displayName: 'Cap', color: '#E8613C',
+  style: 'cap', requirement: { kind: 'plays', count: 5 } }
+```
+
+Character sheets are generated per outfit-and-hat combination and cached by
+that combination, so re-picking something you have worn before costs nothing.
+Hats are drawn entirely above the eye row in every direction: which way someone
+is facing is load-bearing information in a grid game, and no cosmetic is allowed
+to cost the player that.
 
 ## Music and voice
 

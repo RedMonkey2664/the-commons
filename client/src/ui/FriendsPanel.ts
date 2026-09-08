@@ -16,10 +16,16 @@
  */
 
 import Phaser from 'phaser';
-import type { Cosmetic, CosmeticProgress } from '@commons/shared';
+import type { Cosmetic, CosmeticProgress, CosmeticSlot } from '@commons/shared';
 import { COLORS, COSMETICS, SPACING, TYPOGRAPHY, UI, describeRequirement, hex, isUnlocked } from '@commons/shared';
 import { sfx } from '../systems/Sfx';
 import { session } from '../session';
+
+/** Cosmetic strip geometry. Derived rather than guessed, so rows cannot overlap. */
+const COSMETIC_SWATCH = 30;
+const COSMETIC_ROW_HEIGHT = COSMETIC_SWATCH + 22;
+const COSMETIC_SLOT_COUNT = 2;
+const COSMETIC_STRIP_HEIGHT = COSMETIC_ROW_HEIGHT * COSMETIC_SLOT_COUNT + 24;
 
 const PANEL_WIDTH = 400;
 const ROW_HEIGHT = 52;
@@ -215,14 +221,25 @@ export class FriendsPanel {
   private renderCosmetics(): void {
     this.cosmeticRow.removeAll(true);
 
-    const outfits = COSMETICS.filter((c) => c.slot === 'outfit');
-    const chosen = session.cosmetic('outfit');
-    const size = 30;
+    // One row per slot, driven off COSMETICS rather than a hardcoded list, so
+    // a new entry in shared/cosmetics.ts appears here without touching this UI.
+    const slots: CosmeticSlot[] = ['outfit', 'hat'];
+    slots.forEach((slot, row) => this.renderCosmeticSlot(slot, row));
+  }
+
+  /** One labelled row of swatches for one cosmetic slot. */
+  private renderCosmeticSlot(slot: CosmeticSlot, row: number): void {
+    const items = COSMETICS.filter((c) => c.slot === slot);
+    if (items.length === 0) return;
+
+    const chosen = session.cosmetic(slot);
+    const size = COSMETIC_SWATCH;
     const gap = 10;
+    const rowY = row * COSMETIC_ROW_HEIGHT;
 
     this.cosmeticRow.add(
       this.scene.add
-        .text(SPACING.dialogueBoxPadding, -6, 'LOOK', {
+        .text(SPACING.dialogueBoxPadding, rowY - 6, slot.toUpperCase(), {
           fontFamily: TYPOGRAPHY.dialogueFont,
           fontSize: `${TYPOGRAPHY.hudFontSize - 2}px`,
           color: COLORS.dialogueBoxText,
@@ -231,23 +248,30 @@ export class FriendsPanel {
         .setAlpha(0.55),
     );
 
-    outfits.forEach((cosmetic, index) => {
+    items.forEach((cosmetic, index) => {
       const unlocked = isUnlocked(cosmetic, this.progress);
+      const worn = chosen === cosmetic.id;
       const x = SPACING.dialogueBoxPadding + index * (size + gap);
 
       const swatch = this.scene.add
-        .rectangle(x, 4, size, size, hex(cosmetic.color), unlocked ? 1 : 0.18)
+        .rectangle(x, rowY + 4, size, size, hex(cosmetic.color), unlocked ? 1 : 0.18)
         .setOrigin(0, 0)
         .setStrokeStyle(
-          chosen === cosmetic.id ? 3 : 1,
-          hex(chosen === cosmetic.id ? COLORS.dialogueBoxAccent : COLORS.dialogueBoxBorder),
+          worn ? 3 : 1,
+          hex(worn ? COLORS.dialogueBoxAccent : COLORS.dialogueBoxBorder),
           unlocked ? 1 : 0.4,
         );
 
+      // Interactive whether or not it is unlocked: the hover hint on a LOCKED
+      // swatch is how a player learns what earns it, and that is the entire
+      // reason locked entries are shown at all.
+      swatch.setInteractive({ useHandCursor: unlocked });
+
       if (unlocked) {
-        swatch.setInteractive({ useHandCursor: true });
         swatch.on('pointerdown', () => {
-          session.setCosmetic('outfit', cosmetic.id);
+          // Clicking what you already wear takes it off. Hats have no default,
+          // so without this the first hat a player tries is permanent.
+          session.setCosmetic(slot, worn ? undefined : cosmetic.id);
           sfx.uiOpen();
           this.onCosmeticChosen?.(cosmetic);
           this.renderCosmetics();
@@ -256,7 +280,7 @@ export class FriendsPanel {
         // A padlock mark, so locked reads as locked without relying on opacity.
         this.cosmeticRow.add(
           this.scene.add
-            .text(x + size / 2, 4 + size / 2, '·', {
+            .text(x + size / 2, rowY + 4 + size / 2, '·', {
               fontFamily: TYPOGRAPHY.dialogueFont,
               fontSize: '20px',
               color: COLORS.dialogueBoxText,
@@ -267,9 +291,11 @@ export class FriendsPanel {
       }
 
       swatch.on('pointerover', () => {
-        this.hint.setText(
-          unlocked ? `${cosmetic.displayName}` : `${cosmetic.displayName} — ${describeRequirement(cosmetic)}`,
-        );
+        if (!unlocked) {
+          this.hint.setText(`${cosmetic.displayName} — ${describeRequirement(cosmetic)}`);
+        } else {
+          this.hint.setText(worn ? `${cosmetic.displayName} — click to remove` : cosmetic.displayName);
+        }
       });
       swatch.on('pointerout', () => this.hint.setText('ESC to close'));
 
@@ -300,7 +326,7 @@ export class FriendsPanel {
 
     this.hint.setY(panelHeight - 18);
     this.rows.setPosition(0, 56);
-    this.cosmeticRow.setPosition(0, panelHeight - 96);
+    this.cosmeticRow.setPosition(0, panelHeight - COSMETIC_STRIP_HEIGHT);
     if (this.open) {
       this.render();
       this.renderCosmetics();
@@ -319,7 +345,7 @@ export class FriendsPanel {
 
     // Clip to what actually fits inside the frame. Without this a busy room
     // draws rows straight through the panel and out over the world.
-    const available = Math.max(0, this.panelHeight - 56 - 110);
+    const available = Math.max(0, this.panelHeight - 56 - COSMETIC_STRIP_HEIGHT - 20);
     const maxRows = Math.max(1, Math.floor(available / ROW_HEIGHT));
     const all = [...live, ...offline];
     const overflow = Math.max(0, all.length - maxRows);
