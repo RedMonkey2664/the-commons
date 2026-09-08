@@ -1,0 +1,32 @@
+# Fly.io config for the game server. `fly launch --no-deploy` then `fly deploy`.
+app = "the-commons-server"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  NODE_ENV = "production"
+  PORT = "2567"
+  # A mounted volume, so the JSON store survives a deploy. Drop this and the
+  # [mounts] block below if you use DATABASE_URL instead.
+  DATA_DIR = "/data"
+
+[[mounts]]
+  source = "commons_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 2567
+  force_https = true
+  # WebSockets are long-lived: stopping idle machines drops everyone in a room.
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "10s"
+    method = "GET"
+    path = "/health"

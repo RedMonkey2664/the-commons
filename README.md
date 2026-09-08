@@ -9,7 +9,7 @@ The point is **presence, not progression** — see
 
 ---
 
-## Status: Phase 6 — the roadmap is finished, the world is still growing
+## Status: Phase 7 — deployable
 
 | Phase | Scope | State |
 |---|---|---|
@@ -20,11 +20,13 @@ The point is **presence, not progression** — see
 | **4** | Shared jukebox + voice policy | **Done** — 20/20 music checks |
 | **5** | Remaining minigames, cosmetics, ambient life, sound | **Done** — 37/37 polish checks |
 | **6** | Two more zones, two more cabinets, cafe drinks, interior art | **Done** — 29/29 world checks |
+| **7** | Deployable server: CORS allowlist, env config, graceful shutdown, host configs | **Done** — 12/12 deploy checks |
 | 3a | Supabase auth + real accounts | **Blocked** — needs credentials |
 | 4a | Voice transport (LiveKit) | **Blocked** — needs credentials |
+| 7a | Actually hosting it | **Ready** — needs you to pick a host and set two env vars |
 | 5a | Real pixel art to replace the procedural placeholders | **Blocked** — needs source art |
 
-195 checks pass across the seven suites. Every one drives a real browser
+207 checks pass across the eight suites. Every one drives a real browser
 against a real server and asserts on real game state; none of them stub the
 game.
 
@@ -114,6 +116,7 @@ node tools/phase3_arcade.mjs  # arcade, chat and persistence
 node tools/phase4_music.mjs   # shared jukebox sync and voice policy
 node tools/phase5_polish.mjs  # remaining minigames, cosmetics, ambient
 node tools/phase6_world.mjs   # new zones, new cabinets, cafe drinks
+node tools/phase7_deploy.mjs  # PRODUCTION build + cross-origin + CORS
 node tools/capture_zones.mjs  # screenshot zones, for looking at rather than asserting on
 node tools/capture_tileset.mjs # dump the generated tileset, labelled by index
 node tools/capture_screens.mjs # screenshot the loading, title and world screens
@@ -356,6 +359,79 @@ a round, validates an answer and scores it. A new multiplayer game is a new
 implementation of that interface, not an edit to the room.
 
 ---
+
+## Deploying
+
+The client and the server are deployed **separately**, and that split is the
+thing to get right: the client is a static bundle, the server is a long-lived
+stateful process. Rooms hold player positions, the jukebox clock and open
+WebSockets in memory, so it cannot run on serverless functions — Vercel hosts
+the client fine and cannot host the server at all.
+
+### The failure mode, first
+
+The client resolves its server URL **at build time**
+(`client/src/systems/NetworkClient.ts`). With `VITE_SERVER_URL` unset it falls
+back to `ws://localhost:2567`, so a deployed bundle tells every visitor's
+browser to connect to *their own machine*, where nothing is listening. The game
+then falls back to single-player and the HUD reads `OFFLINE`.
+
+Three things follow from that, and all three have to be true:
+
+1. **The server must be hosted somewhere that runs a process.** Render, Railway
+   and Fly all do; configs for each are in the repo.
+2. **The URL must be `wss://`, not `ws://`.** The client page is HTTPS, so a
+   plaintext WebSocket is blocked as mixed content before it is attempted.
+3. **`VITE_SERVER_URL` must be set *before* the build.** Setting it in a
+   dashboard does nothing to a bundle that already shipped — trigger a redeploy.
+
+`tools/phase7_deploy.mjs` exists because every other suite runs the client from
+the Vite dev server on the same origin as the game server, which is not the
+deployed shape and would never have caught any of this. It builds the real
+bundle, serves it from a different origin, and asserts among other things that
+the localhost default did **not** ship.
+
+### Server
+
+```bash
+# Render: push the repo, then "New > Blueprint" and pick render.yaml.
+# Fly:    fly launch --no-deploy && fly deploy
+# Railway: new service from repo; it detects the Dockerfile.
+# Locally, the same way a host runs it:
+NODE_ENV=production ALLOWED_ORIGINS=https://your-client.vercel.app \
+  npm start --workspace server
+```
+
+| Variable | Meaning |
+|---|---|
+| `PORT` | Set by the host. Defaults to 2567. |
+| `ALLOWED_ORIGINS` | Comma-separated browser origins, no trailing slash. **Unset means any site may call your server** — the server warns about this at boot in production rather than locking down silently, because a first deploy that fails closed looks like a bug in the game. |
+| `DATABASE_URL` | Postgres. Without it the JSON store is used. |
+| `DATA_DIR` | Where the JSON store writes. Point it at a mounted volume, or scores and study time reset on every deploy. |
+| `LIVEKIT_URL` / `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` | Voice transport. Unset means the mic reports unavailable, which is the current state. |
+
+### Client
+
+```bash
+VITE_SERVER_URL=wss://your-server.onrender.com npm run build --workspace client
+# publishes client/dist — on Vercel, set VITE_SERVER_URL then redeploy
+```
+
+`client/vercel.json` sets the build command, output directory and an SPA
+rewrite. Point the Vercel project at the repo root, not at `client/` — the
+build needs the workspace root to resolve `@commons/shared` and the repo-level
+`assets/` folder that supplies maps and tilesets.
+
+### What is NOT verified
+
+The `Dockerfile` has never been built: Docker is not installed on the machine
+this was developed on, and it says so at the top of the file. The server it
+starts is tested — `phase7_deploy.mjs` runs the same start command with the same
+environment variables against a real production bundle — but the image build
+itself is not. Treat your first `docker build` as the test.
+
+`render.yaml`, `fly.toml` and `client/vercel.json` are likewise written from the
+providers' documented schemas and have not been run against those providers.
 
 ## Cosmetics
 

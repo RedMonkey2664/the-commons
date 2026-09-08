@@ -25,8 +25,42 @@ import { closeStore, getStore, initStore } from './db/client.js';
 
 const PORT = Number(process.env['PORT'] ?? 2567);
 
+/**
+ * Who may call this server from a browser.
+ *
+ * `ALLOWED_ORIGINS` is a comma-separated list, e.g.
+ *   ALLOWED_ORIGINS=https://the-commons-client.vercel.app,http://localhost:5173
+ *
+ * Unset means "allow anything", which is right for local development and wrong
+ * for a deployed server — so it is unset by default and warned about loudly at
+ * boot rather than silently locked down, which would make the first deploy fail
+ * in a way that looks like a bug in the game.
+ */
+const ALLOWED_ORIGINS = (process.env['ALLOWED_ORIGINS'] ?? '')
+  .split(',')
+  .map((o) => o.trim())
+  .filter(Boolean);
+
 const app = express();
-app.use(cors());
+
+// Behind a host's load balancer (Render, Railway, Fly all use one), the socket
+// is plain HTTP and only X-Forwarded-Proto says the client used TLS.
+app.set('trust proxy', 1);
+
+app.use(
+  cors(
+    ALLOWED_ORIGINS.length === 0
+      ? {}
+      : {
+          origin(origin, callback) {
+            // No Origin header: same-origin, curl, or a native client. Not a
+            // browser cross-origin request, so nothing to gate.
+            if (!origin || ALLOWED_ORIGINS.includes(origin)) return callback(null, true);
+            return callback(new Error(`origin not allowed: ${origin}`));
+          },
+        },
+  ),
+);
 app.use(express.json());
 
 app.get('/health', (_request, response) => {
@@ -294,14 +328,67 @@ for (const zone of ZONES) {
 
 await initStore();
 
-httpServer.listen(PORT, () => {
+// 0.0.0.0 explicitly: a container that binds 127.0.0.1 is unreachable from
+// outside itself, and every host's health check then fails with no useful error.
+httpServer.listen(PORT, '0.0.0.0', () => {
   console.log(`\n  The Commons server listening on ws://localhost:${PORT}\n`);
+
+  if (ALLOWED_ORIGINS.length > 0) {
+    console.log(`  [cors] allowing: ${ALLOWED_ORIGINS.join(', ')}`);
+  } else if (process.env['NODE_ENV'] === 'production') {
+    console.warn(
+      '  [cors] ALLOWED_ORIGINS is unset — any website may call this server.\n' +
+        '         Set it to your client origin before sharing the URL.',
+    );
+  }
+
+  if (getStore().kind === 'json' && process.env['NODE_ENV'] === 'production') {
+    console.warn(
+      '  [store] using the JSON store on local disk. On a host with an\n' +
+        '          ephemeral filesystem this is wiped on every deploy —\n' +
+        '          set DATABASE_URL, or mount a volume at DATA_DIR.',
+    );
+  }
 });
 
+/**
+ * Shut down in the right order, and only once.
+ *
+ * Hosts send SIGTERM and then SIGKILL a few seconds later, so this has to
+ * finish quickly: stop accepting connections, let Colyseus tell its rooms to
+ * dispose, then flush the store. Flushing last matters — the JSON store's
+ * writes are debounced, and disposing rooms is what produces the final study
+ * times worth flushing.
+ */
+let shuttingDown = false;
+
+async function shutdown(signal: string): Promise<void> {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`\n  ${signal} — shutting down`);
+
+  const forced = setTimeout(() => {
+    console.warn('  shutdown took too long; exiting anyway');
+    process.exit(0);
+  }, 8000);
+  forced.unref();
+
+  try {
+    await gameServer.gracefullyShutdown(false);
+  } catch (error) {
+    console.warn('  [colyseus] shutdown error:', (error as Error).message);
+  }
+
+  try {
+    await closeStore();
+  } catch (error) {
+    console.warn('  [store] flush error:', (error as Error).message);
+  }
+
+  clearTimeout(forced);
+  process.exit(0);
+}
+
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
-  process.once(signal, () => {
-    // Flush the debounced JSON store before exiting, or the last few minutes of
-    // study time and scores are lost on every restart.
-    void closeStore().finally(() => process.exit(0));
-  });
+  process.once(signal, () => void shutdown(signal));
 }

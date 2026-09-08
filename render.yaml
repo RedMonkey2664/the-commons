@@ -1,0 +1,24 @@
+# Render blueprint for the game server.
+#
+# The client is NOT here — it is a static bundle and belongs on Vercel or any
+# static host. This deploys only the Colyseus server it talks to.
+services:
+  - type: web
+    name: the-commons-server
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    # Free instances sleep when idle; the first player to arrive after a sleep
+    # waits for a cold start rather than failing, and the client falls back to
+    # single-player in the meantime.
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # Set this to your deployed client's origin, with no trailing slash.
+      - key: ALLOWED_ORIGINS
+        sync: false
+      # Optional. Without it the JSON store is used, and a free Render instance
+      # has an ephemeral disk — scores reset on every deploy.
+      - key: DATABASE_URL
+        sync: false

@@ -28,7 +28,17 @@ import type {
 import { MAX_STUDY_SECONDS, MIN_STUDY_SECONDS } from '@commons/shared';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const DEFAULT_PATH = resolve(here, '..', '..', '.data', 'store.json');
+/**
+ * Where the JSON store lives.
+ *
+ * DATA_DIR exists so a deployed server can point this at a mounted volume.
+ * Without one, most hosts give a container an ephemeral filesystem and every
+ * deploy silently resets scores and study time — which looks like data loss
+ * rather than a configuration choice.
+ */
+const DEFAULT_PATH = process.env['DATA_DIR']
+  ? resolve(process.env['DATA_DIR'], 'store.json')
+  : resolve(here, '..', '..', '.data', 'store.json');
 
 interface Snapshot {
   version: 1;
