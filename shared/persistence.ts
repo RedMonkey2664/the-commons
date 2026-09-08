@@ -105,6 +105,14 @@ export interface Store {
   topScores(minigameId: string, limit: number): Promise<HighScore[]>;
   /** Friend-filtered board — 06 calls this more socially meaningful. */
   friendScores(minigameId: string, userId: string, limit: number): Promise<HighScore[]>;
+  /**
+   * How many arcade runs this player has recorded, across all minigames.
+   *
+   * Needed by the "played N rounds" cosmetic unlocks (06). Counting distinct
+   * minigames with a score instead would answer a different question and make
+   * a five-round unlock reachable only by playing five different games.
+   */
+  countPlays(userId: string): Promise<number>;
 }
 
 /**

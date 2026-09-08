@@ -235,6 +235,10 @@ export class JsonStore implements Store {
     return [...bestByUser.values()].sort((a, b) => b.score - a.score).slice(0, limit);
   }
 
+  async countPlays(userId: string): Promise<number> {
+    return this.data.scores.filter((row) => row.userId === userId).length;
+  }
+
   async friendScores(minigameId: string, userId: string, limit: number): Promise<HighScore[]> {
     const friends = await this.listFriends(userId);
     const allowed = new Set(friends.filter((f) => f.status === 'accepted').map((f) => f.id));

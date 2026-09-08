@@ -16,7 +16,10 @@
  */
 
 import Phaser from 'phaser';
-import { COLORS, SPACING, TYPOGRAPHY, UI, hex } from '@commons/shared';
+import type { Cosmetic, CosmeticProgress } from '@commons/shared';
+import { COLORS, COSMETICS, SPACING, TYPOGRAPHY, UI, describeRequirement, hex, isUnlocked } from '@commons/shared';
+import { sfx } from '../systems/Sfx';
+import { session } from '../session';
 
 const PANEL_WIDTH = 400;
 const ROW_HEIGHT = 52;
@@ -73,6 +76,15 @@ export class FriendsPanel {
   private panelHeight = 0;
   private entriesProvider: () => FriendEntry[] = () => [];
 
+  /**
+   * Cosmetics (06). Lives in this panel rather than its own screen because it
+   * is a small, occasional thing — a separate menu would give it more weight
+   * than "pick a colour" deserves.
+   */
+  private readonly cosmeticRow: Phaser.GameObjects.Container;
+  private progress: CosmeticProgress = { bestScores: {}, totalPlays: 0, studyMinutes: 0 };
+  private onCosmeticChosen?: (cosmetic: Cosmetic) => void;
+
   constructor(private readonly scene: Phaser.Scene) {
     this.scrim = scene.add.rectangle(0, 0, 10, 10, 0x000000, 0.45).setOrigin(0, 0);
 
@@ -96,9 +108,10 @@ export class FriendsPanel {
       .setAlpha(0.6);
 
     this.rows = scene.add.container(0, 0);
+    this.cosmeticRow = scene.add.container(0, 0);
 
     this.container = scene.add
-      .container(0, 0, [this.frame, this.title, this.hint, this.rows])
+      .container(0, 0, [this.frame, this.title, this.hint, this.rows, this.cosmeticRow])
       .setDepth(1400)
       .setVisible(false);
 
@@ -120,6 +133,13 @@ export class FriendsPanel {
     this.entriesProvider = provider;
   }
 
+  /** Unlock facts from the server, and where to send a chosen cosmetic. */
+  setCosmetics(progress: CosmeticProgress, onChosen: (cosmetic: Cosmetic) => void): void {
+    this.progress = progress;
+    this.onCosmeticChosen = onChosen;
+    if (this.open) this.renderCosmetics();
+  }
+
   toggle(): void {
     if (this.open) this.close();
     else this.show();
@@ -128,6 +148,7 @@ export class FriendsPanel {
   show(): void {
     if (this.open) return;
     this.open = true;
+    sfx.uiOpen();
 
     // Cancel an in-flight close, or its onComplete hides the panel again a
     // moment after it reopens — leaving it invisible but still modal, which
@@ -136,6 +157,7 @@ export class FriendsPanel {
     this.closeTween = undefined;
 
     this.render();
+    this.renderCosmetics();
 
     const { width } = this.scene.scale.gameSize;
     this.scrim.setVisible(true).setAlpha(0);
@@ -159,6 +181,7 @@ export class FriendsPanel {
   close(): void {
     if (!this.open) return;
     this.open = false;
+    sfx.uiClose();
 
     const { width } = this.scene.scale.gameSize;
     this.scene.tweens.add({
@@ -181,6 +204,78 @@ export class FriendsPanel {
   }
 
   // -- rendering -----------------------------------------------------------
+
+  /**
+   * Swatches for every cosmetic, locked ones included.
+   *
+   * Locked entries are shown greyed with their requirement rather than hidden:
+   * 06 wants the arcade to have "a reason to be revisited", and a reward you
+   * cannot see is not a reason.
+   */
+  private renderCosmetics(): void {
+    this.cosmeticRow.removeAll(true);
+
+    const outfits = COSMETICS.filter((c) => c.slot === 'outfit');
+    const chosen = session.cosmetic('outfit');
+    const size = 30;
+    const gap = 10;
+
+    this.cosmeticRow.add(
+      this.scene.add
+        .text(SPACING.dialogueBoxPadding, -6, 'LOOK', {
+          fontFamily: TYPOGRAPHY.dialogueFont,
+          fontSize: `${TYPOGRAPHY.hudFontSize - 2}px`,
+          color: COLORS.dialogueBoxText,
+        })
+        .setOrigin(0, 1)
+        .setAlpha(0.55),
+    );
+
+    outfits.forEach((cosmetic, index) => {
+      const unlocked = isUnlocked(cosmetic, this.progress);
+      const x = SPACING.dialogueBoxPadding + index * (size + gap);
+
+      const swatch = this.scene.add
+        .rectangle(x, 4, size, size, hex(cosmetic.color), unlocked ? 1 : 0.18)
+        .setOrigin(0, 0)
+        .setStrokeStyle(
+          chosen === cosmetic.id ? 3 : 1,
+          hex(chosen === cosmetic.id ? COLORS.dialogueBoxAccent : COLORS.dialogueBoxBorder),
+          unlocked ? 1 : 0.4,
+        );
+
+      if (unlocked) {
+        swatch.setInteractive({ useHandCursor: true });
+        swatch.on('pointerdown', () => {
+          session.setCosmetic('outfit', cosmetic.id);
+          sfx.uiOpen();
+          this.onCosmeticChosen?.(cosmetic);
+          this.renderCosmetics();
+        });
+      } else {
+        // A padlock mark, so locked reads as locked without relying on opacity.
+        this.cosmeticRow.add(
+          this.scene.add
+            .text(x + size / 2, 4 + size / 2, '·', {
+              fontFamily: TYPOGRAPHY.dialogueFont,
+              fontSize: '20px',
+              color: COLORS.dialogueBoxText,
+            })
+            .setOrigin(0.5)
+            .setAlpha(0.5),
+        );
+      }
+
+      swatch.on('pointerover', () => {
+        this.hint.setText(
+          unlocked ? `${cosmetic.displayName}` : `${cosmetic.displayName} — ${describeRequirement(cosmetic)}`,
+        );
+      });
+      swatch.on('pointerout', () => this.hint.setText('ESC to close'));
+
+      this.cosmeticRow.add(swatch);
+    });
+  }
 
   private layout(): void {
     const { width, height } = this.scene.scale.gameSize;
@@ -205,7 +300,11 @@ export class FriendsPanel {
 
     this.hint.setY(panelHeight - 18);
     this.rows.setPosition(0, 56);
-    if (this.open) this.render();
+    this.cosmeticRow.setPosition(0, panelHeight - 96);
+    if (this.open) {
+      this.render();
+      this.renderCosmetics();
+    }
   }
 
   private render(): void {
@@ -220,7 +319,7 @@ export class FriendsPanel {
 
     // Clip to what actually fits inside the frame. Without this a busy room
     // draws rows straight through the panel and out over the world.
-    const available = Math.max(0, this.panelHeight - 56 - 40);
+    const available = Math.max(0, this.panelHeight - 56 - 110);
     const maxRows = Math.max(1, Math.floor(available / ROW_HEIGHT));
     const all = [...live, ...offline];
     const overflow = Math.max(0, all.length - maxRows);

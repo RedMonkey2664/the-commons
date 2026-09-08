@@ -18,6 +18,8 @@ interface StoredSession {
   userId?: string;
   /** Per-zone manual mic overrides. See Session.voiceOverride. */
   voiceOverrides?: Record<string, boolean>;
+  /** Chosen cosmetics, by slot. See Session.cosmetic. */
+  cosmetics?: Record<string, string>;
 }
 
 function read(): StoredSession {
@@ -107,6 +109,26 @@ class Session {
     this.state = {
       ...this.state,
       voiceOverrides: { ...(this.state.voiceOverrides ?? {}), [zoneId]: muted },
+    };
+    write(this.state);
+  }
+
+  /**
+   * Chosen cosmetic for a slot (06).
+   *
+   * Stored locally because it is cosmetic-only — the worst a tampered client
+   * achieves is wearing a colour it has not unlocked, which harms nobody. The
+   * FACTS that unlock cosmetics (scores, study time) are server-held; only the
+   * preference lives here.
+   */
+  cosmetic(slot: string): string | undefined {
+    return this.state.cosmetics?.[slot];
+  }
+
+  setCosmetic(slot: string, id: string): void {
+    this.state = {
+      ...this.state,
+      cosmetics: { ...(this.state.cosmetics ?? {}), [slot]: id },
     };
     write(this.state);
   }

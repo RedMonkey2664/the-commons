@@ -265,6 +265,14 @@ export class PostgresStore implements Store {
       .slice(0, limit);
   }
 
+  async countPlays(userId: string): Promise<number> {
+    const { rows } = await this.pool.query<{ count: string }>(
+      'select count(*)::text as count from high_scores where user_id = $1',
+      [userId],
+    );
+    return Number(rows[0]?.count ?? 0);
+  }
+
   async friendScores(minigameId: string, userId: string, limit: number): Promise<HighScore[]> {
     const friends = await this.listFriends(userId);
     const allowed = new Set(friends.filter((f) => f.status === 'accepted').map((f) => f.id));

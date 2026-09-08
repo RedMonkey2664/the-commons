@@ -5,33 +5,20 @@
  * — scores and round outcomes are computed server-side, not trusted from
  * clients."
  *
- * So: the server owns the question bank, the clock and the scoring. Clients
- * receive a question WITHOUT its answer, send back an index, and are told what
- * happened. A client cannot know the answer before the reveal, and cannot
- * report its own score.
+ * This room owns the lobby, the clock, the phase machine, per-player state,
+ * forfeits and persistence. It owns NO game rules: those come from a rules
+ * module (server/src/minigames/rules.ts) selected by `minigameId`.
  *
- * One generic room serves every multiplayer minigame, matched on `minigameId`
- * the same way ZoneRoom is matched on `zoneId`. Adding a second multiplayer
- * game means adding a rules object, not a room class.
+ * That split is what makes 06's plugin claim true for multiplayer games as well
+ * as solo ones — Reaction Tap was added as a rules class and a config entry,
+ * with no change to this file.
  */
 
 import { Room, type Client } from 'colyseus';
 import { ArraySchema, Schema, type } from '@colyseus/schema';
-import type {
-  FinishedPayload,
-  MinigameJoinOptions,
-  MinigamePhase,
-  RoundPayload,
-  RoundResultPayload,
-  TriviaQuestion,
-} from '@commons/shared';
-import {
-  MINIGAME_CLIENT_MESSAGE,
-  MINIGAME_SERVER_MESSAGE,
-  TRIVIA_RULES,
-  getMinigame,
-} from '@commons/shared';
-import { TRIVIA_QUESTIONS } from '../minigames/triviaQuestions.js';
+import type { MinigameJoinOptions, MinigamePhase } from '@commons/shared';
+import { MINIGAME_CLIENT_MESSAGE, MINIGAME_SERVER_MESSAGE, getMinigame } from '@commons/shared';
+import { rulesFor, type BuiltRound, type MinigameRules } from '../minigames/rules.js';
 import { getStore } from '../db/client.js';
 
 class MinigamePlayer extends Schema {
@@ -47,48 +34,51 @@ class MinigameState extends Schema {
   @type('string') minigameId = '';
   @type('string') phase: MinigamePhase = 'lobby';
   @type('number') roundIndex = 0;
-  // Annotated: TRIVIA_RULES is `as const`, so this would otherwise infer the
-  // literal type 8 and reject any other round count.
-  @type('number') totalRounds: number = TRIVIA_RULES.questionsPerGame;
+  @type('number') totalRounds = 0;
   @type([MinigamePlayer]) players = new ArraySchema<MinigamePlayer>();
 }
 
-/** What the server remembers about the live round; never synced. */
-interface LiveRound {
-  question: TriviaQuestion;
-  answerIndex: number;
+/** The live round. Never synced — `secret` is the whole point. */
+interface LiveRound extends BuiltRound {
   startedAt: number;
-  /** playerId -> answer index and the moment it arrived. */
-  answers: Map<string, { index: number; at: number }>;
+  answers: Map<string, { answer: unknown; at: number }>;
 }
 
 export class MinigameRoom extends Room<MinigameState> {
   override maxClients = 4;
 
-  private questions: TriviaQuestion[] = [];
+  private rules!: MinigameRules;
   private round?: LiveRound;
   private timer?: NodeJS.Timeout;
   private lobbyTimer?: NodeJS.Timeout;
+  /** Mid-round cue timers, cleared with the round. */
+  private cueTimers: NodeJS.Timeout[] = [];
 
   override onCreate(options: { minigameId?: string }): void {
     const minigameId = options.minigameId ?? 'trivia_blitz';
     const config = getMinigame(minigameId);
+    const rules = rulesFor(minigameId);
+
+    if (!rules) {
+      // A config entry pointing at rules that do not exist would strand players
+      // in a lobby forever; fail loudly at creation instead.
+      throw new Error(`No multiplayer rules registered for "${minigameId}"`);
+    }
+    this.rules = rules;
 
     this.setState(new MinigameState());
     this.state.minigameId = minigameId;
+    this.state.totalRounds = rules.roundsPerGame;
     this.maxClients = config?.maxPlayers ?? 4;
-
     this.setMetadata({ minigameId });
 
     this.onMessage(MINIGAME_CLIENT_MESSAGE.ready, (client) => this.handleReady(client));
-    this.onMessage(MINIGAME_CLIENT_MESSAGE.answer, (client, message: { index?: number }) => {
+    this.onMessage(MINIGAME_CLIENT_MESSAGE.answer, (client, message: unknown) => {
       this.handleAnswer(client, message);
     });
     this.onMessage(MINIGAME_CLIENT_MESSAGE.forfeit, (client) => {
-      // 11 allows a graceful forfeit; leaving mid-round is not a penalty.
-      // client.leave() so the socket actually closes and onLeave runs once —
-      // calling onLeave directly leaves the connection open, keeps the room
-      // alive, and then runs onLeave a second time when the socket does drop.
+      // 11 allows a graceful forfeit. client.leave() so the socket actually
+      // closes and onLeave runs exactly once.
       client.leave();
     });
 
@@ -102,11 +92,11 @@ export class MinigameRoom extends Room<MinigameState> {
     player.displayName = sanitizeName(options?.displayName);
     this.state.players.push(player);
 
-    // 06: the cabinet opens a "waiting for players" lobby so friends standing
-    // nearby can join before the round begins. It cannot wait forever, so a
-    // solo player starts on the timer instead of being stuck.
+    // 06: the cabinet opens a "waiting for players" lobby so friends nearby can
+    // join before the round begins. It cannot wait forever, so a solo player
+    // starts on the timer rather than being stuck.
     if (this.state.phase === 'lobby' && !this.lobbyTimer) {
-      this.lobbyTimer = setTimeout(() => this.begin(), TRIVIA_RULES.lobbyWaitMs);
+      this.lobbyTimer = setTimeout(() => this.begin(), this.rules.lobbyWaitMs);
     }
   }
 
@@ -118,8 +108,8 @@ export class MinigameRoom extends Room<MinigameState> {
       this.clearTimers();
       return;
     }
-    // Everyone still here has answered — don't make them wait out the clock
-    // for someone who left.
+    // Everyone still here has answered — don't make them wait out the clock for
+    // someone who left.
     if (this.state.phase === 'playing' && this.everyoneAnswered()) this.resolveRound();
   }
 
@@ -142,64 +132,64 @@ export class MinigameRoom extends Room<MinigameState> {
     if (this.state.phase !== 'lobby') return;
     this.clearTimers();
 
-    // Stop matchmaking into a game already underway. Without this a late
-    // joinOrCreate lands in a running round, their `ready` is ignored, and they
-    // finish in the standings on zero having never seen a question.
+    // Stop matchmaking into a game already underway: a late joiner's `ready`
+    // would be ignored and they would finish on zero having seen nothing.
     void this.lock();
 
-    this.questions = pickQuestions(TRIVIA_RULES.questionsPerGame);
+    this.rules.prepare();
     this.state.roundIndex = 0;
-    this.state.totalRounds = this.questions.length;
+    this.state.totalRounds = this.rules.roundsPerGame;
     this.state.phase = 'countdown';
 
-    this.timer = setTimeout(() => this.startRound(), TRIVIA_RULES.countdownMs);
+    this.timer = setTimeout(() => this.startRound(), this.rules.countdownMs);
   }
 
   // -- rounds --------------------------------------------------------------
 
   private startRound(): void {
-    const question = this.questions[this.state.roundIndex];
-    if (!question) {
+    const built = this.rules.buildRound(this.state.roundIndex);
+    if (!built) {
       this.finish();
       return;
     }
 
-    this.round = {
-      question,
-      answerIndex: question.answerIndex ?? 0,
-      startedAt: Date.now(),
-      answers: new Map(),
-    };
-
+    this.round = { ...built, startedAt: Date.now(), answers: new Map() };
     for (const player of this.state.players) player.answered = false;
     this.state.phase = 'playing';
 
-    // The answer index is stripped before this leaves the server. A client that
-    // received it could win every round without playing.
-    const payload: RoundPayload = {
+    this.broadcast(MINIGAME_SERVER_MESSAGE.round, {
       index: this.state.roundIndex,
       total: this.state.totalRounds,
-      question: { id: question.id, prompt: question.prompt, options: question.options },
-      durationMs: TRIVIA_RULES.roundMs,
-    };
-    this.broadcast(MINIGAME_SERVER_MESSAGE.round, payload);
+      durationMs: built.durationMs,
+      ...(built.payload as Record<string, unknown>),
+    });
 
-    this.timer = setTimeout(() => this.resolveRound(), TRIVIA_RULES.roundMs);
+    const live = this.round;
+    for (const cue of built.cues ?? []) {
+      this.cueTimers.push(
+        setTimeout(() => {
+          // Bound to THIS round: one that resolved early (everyone answered)
+          // must not fire a stale cue into the next one.
+          if (this.round === live && this.state.phase === 'playing') {
+            this.broadcast(MINIGAME_SERVER_MESSAGE.cue, cue.payload);
+          }
+        }, cue.atMs),
+      );
+    }
+
+    this.timer = setTimeout(() => this.resolveRound(), built.durationMs);
   }
 
-  private handleAnswer(client: Client, message: { index?: number }): void {
+  private handleAnswer(client: Client, message: unknown): void {
     if (this.state.phase !== 'playing' || !this.round) return;
 
     const player = this.state.players.find((p) => p.id === client.sessionId);
     if (!player || player.answered) return; // first answer only; no changing it
 
-    const index = Number(message?.index);
-    if (!Number.isInteger(index) || index < 0 || index >= this.round.question.options.length) {
-      return;
-    }
-
     player.answered = true;
-    this.round.answers.set(client.sessionId, { index, at: Date.now() });
+    // Timed on ARRIVAL, by the server's clock. A client-reported time could be
+    // anything the client liked.
+    this.round.answers.set(client.sessionId, { answer: message, at: Date.now() });
 
     if (this.everyoneAnswered()) this.resolveRound();
   }
@@ -209,26 +199,24 @@ export class MinigameRoom extends Room<MinigameState> {
   }
 
   private resolveRound(): void {
-    if (!this.round || this.state.phase !== 'playing') return;
+    const round = this.round;
+    if (!round || this.state.phase !== 'playing') return;
     this.clearTimers();
 
-    const { answerIndex, startedAt } = this.round;
-    const results: RoundResultPayload['scores'] = [];
+    const scores: Array<{ playerId: string; displayName: string; correct: boolean; score: number }> = [];
 
     for (const player of this.state.players) {
-      const answer = this.round.answers.get(player.id);
-      const correct = answer?.index === answerIndex;
+      const submitted = round.answers.get(player.id);
+      let correct = false;
 
-      if (correct && answer) {
-        // Faster answers score more, floored so a late correct answer still
-        // beats a wrong one. Computed from the SERVER's clock.
-        const elapsed = Math.max(0, Math.min(TRIVIA_RULES.roundMs, answer.at - startedAt));
-        const t = 1 - elapsed / TRIVIA_RULES.roundMs;
-        const span = TRIVIA_RULES.maxPoints - TRIVIA_RULES.minPoints;
-        player.score += Math.round(TRIVIA_RULES.minPoints + span * t);
+      if (submitted) {
+        const elapsed = submitted.at - round.startedAt;
+        const result = this.rules.score(round.secret, submitted.answer, elapsed, round.durationMs);
+        correct = result.correct;
+        player.score += result.points;
       }
 
-      results.push({
+      scores.push({
         playerId: player.id,
         displayName: player.displayName,
         correct,
@@ -238,9 +226,9 @@ export class MinigameRoom extends Room<MinigameState> {
 
     this.state.phase = 'between';
     this.broadcast(MINIGAME_SERVER_MESSAGE.result, {
-      correctIndex: answerIndex,
-      scores: results,
-    } satisfies RoundResultPayload);
+      ...(this.rules.reveal(round.secret) as Record<string, unknown>),
+      scores,
+    });
 
     this.round = undefined;
     this.state.roundIndex += 1;
@@ -248,7 +236,7 @@ export class MinigameRoom extends Room<MinigameState> {
     this.timer = setTimeout(() => {
       if (this.state.roundIndex >= this.state.totalRounds) this.finish();
       else this.startRound();
-    }, TRIVIA_RULES.revealMs);
+    }, this.rules.revealMs);
   }
 
   private finish(): void {
@@ -261,7 +249,7 @@ export class MinigameRoom extends Room<MinigameState> {
 
     this.broadcast(MINIGAME_SERVER_MESSAGE.finished, {
       standings: standings.map(({ playerId, displayName, score }) => ({ playerId, displayName, score })),
-    } satisfies FinishedPayload);
+    });
 
     void this.persistScores(standings);
   }
@@ -295,19 +283,11 @@ export class MinigameRoom extends Room<MinigameState> {
   private clearTimers(): void {
     if (this.timer) clearTimeout(this.timer);
     if (this.lobbyTimer) clearTimeout(this.lobbyTimer);
+    for (const cue of this.cueTimers) clearTimeout(cue);
+    this.cueTimers = [];
     this.timer = undefined;
     this.lobbyTimer = undefined;
   }
-}
-
-/** Fisher-Yates over a copy, so a session's questions are a fresh shuffle. */
-function pickQuestions(count: number): TriviaQuestion[] {
-  const pool = [...TRIVIA_QUESTIONS];
-  for (let i = pool.length - 1; i > 0; i -= 1) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [pool[i], pool[j]] = [pool[j]!, pool[i]!];
-  }
-  return pool.slice(0, Math.min(count, pool.length));
 }
 
 function sanitizeName(raw: unknown): string {

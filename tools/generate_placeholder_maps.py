@@ -44,7 +44,11 @@ AMBIENT = {
     WATER_RIPPLE: "waterShimmer",
     WINDOW_LIT: "windowFlicker",
     POND: "waterShimmer",
-    NEON_STRIP: "windowFlicker",
+    NEON_STRIP: "cabinetFlicker",
+    # 10's ambient table, the rest of it.
+    KITCHEN_TILE: "cafeSteam",
+    SHELF_LOW: "pageTurn",
+    STAGE_FLOOR: "bandstandPulse",
 }
 
 OUT_DIR = os.path.join(os.path.dirname(__file__), "..", "assets", "maps")

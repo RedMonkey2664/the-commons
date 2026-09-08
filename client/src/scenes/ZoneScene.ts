@@ -18,8 +18,16 @@
 
 import Phaser from 'phaser';
 import type { Direction, TileCoord, ZoneConfig, ZoneId } from '@commons/shared';
-import { CAMERA, COLORS, VIEWPORT, ZONES, ZONE_TRANSITION, resolveEntryPoint } from '@commons/shared';
-import { ASSET_KEYS, generateAllPlaceholderArt } from '../art/placeholderArt';
+import {
+  CAMERA,
+  COLORS,
+  VIEWPORT,
+  ZONES,
+  ZONE_TRANSITION,
+  getCosmetic,
+  resolveEntryPoint,
+} from '@commons/shared';
+import { ASSET_KEYS, ensureOutfitSheet, generateAllPlaceholderArt } from '../art/placeholderArt';
 import { registerCharacterAnimations } from '../art/characterAnimations';
 import { Player } from '../entities/Player';
 import { AmbientAnimator } from '../systems/AmbientAnimator';
@@ -34,6 +42,8 @@ import { NetworkClient } from '../systems/NetworkClient';
 import { JukeboxPlayer } from '../systems/JukeboxPlayer';
 import { VoiceClient } from '../systems/VoiceClient';
 import { session } from '../session';
+import { sfx } from '../systems/Sfx';
+import { fetchProgress } from '../systems/scoreClient';
 
 /** Scene data accepted when starting a zone. */
 export interface ZoneSceneData {
@@ -186,6 +196,17 @@ export abstract class ZoneScene extends Phaser.Scene {
         else ui.chat?.system('not connected — nobody can hear you');
       });
 
+      // Unlock facts come from the server; the RULES are evaluated client-side
+      // in shared/cosmetics.ts. Cosmetic-only, so that split costs nothing.
+      void fetchProgress().then((progress) => {
+        if (!progress) return;
+        ui.friends?.setCosmetics(progress, (cosmetic) => {
+          const texture = ensureOutfitSheet(this, cosmetic.color);
+          this.player?.setTexture(texture);
+          ui.popup?.show(`Wearing ${cosmetic.displayName}`, { iconColor: cosmetic.color });
+        });
+      });
+
       ui.friends?.setEntriesProvider(() =>
         (this.multiplayer?.roster ?? []).map((person) => ({
           displayName: person.displayName,
@@ -246,6 +267,10 @@ export abstract class ZoneScene extends Phaser.Scene {
     this.player.update(time, this.controls.heldDirection());
 
     if (this.controls.justPressed('interact')) {
+      // Browsers block audio until a gesture. Interacting IS one, so this is
+      // where the sound engine comes alive rather than at boot where it would
+      // silently fail and stay dead.
+      sfx.unlock();
       this.interactions.tryInteract(this.player.tile, this.player.facing);
     }
 
@@ -272,7 +297,9 @@ export abstract class ZoneScene extends Phaser.Scene {
     this.player = new Player(this, {
       tile: this.resolveSpawn(),
       facing: this.sceneData.facing ?? 'down',
-      textureKey: session.spriteKey,
+      // The chosen outfit, generated on demand. Falls back to the default
+      // sheet when nothing has been picked.
+      textureKey: this.outfitTexture(),
       isWalkable: this.zoneMap.isWalkable,
       // Intent is sent as the step COMMITS locally, not on arrival: the client
       // predicts immediately and the server validates in parallel (02).
@@ -506,6 +533,18 @@ export abstract class ZoneScene extends Phaser.Scene {
     this.scene.bringToTop(sceneKey);
   }
 
+  /**
+   * Texture for the player's chosen outfit (06).
+   *
+   * Cosmetic-only: this changes the colour of a sprite and nothing else.
+   */
+  private outfitTexture(): string {
+    const chosen = session.cosmetic('outfit');
+    const cosmetic = chosen ? getCosmetic(chosen) : undefined;
+    if (!cosmetic) return session.spriteKey;
+    return ensureOutfitSheet(this, cosmetic.color);
+  }
+
   /** Hook for zone-specific setup (Pomodoro pods, jukebox, cabinets). */
   protected onZoneReady(): void {}
 
@@ -532,6 +571,7 @@ export abstract class ZoneScene extends Phaser.Scene {
     if (!target) return;
 
     this.transitioning = true;
+    sfx.transition();
     this.player.setBlocked(true);
     ui.friends?.close();
 

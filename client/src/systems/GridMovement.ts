@@ -20,6 +20,7 @@ import Phaser from 'phaser';
 import type { CharacterState, Direction, TileCoord } from '@commons/shared';
 import { BUMP, DIRECTION_VECTORS, MOVEMENT, SPACING, tileInFront } from '@commons/shared';
 import { idleFrameIndex, walkAnimKey } from '../art/characterAnimations';
+import { sfx } from './Sfx';
 
 const TILE = SPACING.tile;
 
@@ -37,6 +38,12 @@ export interface GridMovementOptions {
   stepDurationMs?: number;
   /** Set 0 to move immediately on a direction press instead of turning first. */
   turnInPlaceMs?: number;
+  /**
+   * Play footsteps and bumps for this character. Only the LOCAL player does:
+   * hearing every remote player's footsteps in a busy room would be a mess,
+   * and 07 wants the game to stay behind conversation.
+   */
+  audible?: boolean;
   /** Fires as a move BEGINS — the network hook, so intent is sent on commit. */
   onDepart?: (from: TileCoord, to: TileCoord, facing: Direction) => void;
   /** Fires as a move COMPLETES. */
@@ -64,6 +71,8 @@ export class GridMovement {
   /** Turn-in-place bookkeeping. */
   private turningDirection: Direction | null = null;
   private turnStartedAt = 0;
+  /** Alternates footstep pitch so a walk cycle isn't mechanical. */
+  private stepParity = 0;
 
   private readonly stepDurationMs: number;
   private readonly turnInPlaceMs: number;
@@ -174,6 +183,12 @@ export class GridMovement {
 
   // -- movement ------------------------------------------------------------
 
+  /** Point at a different character sheet, e.g. after a cosmetic change. */
+  setTextureKey(textureKey: string): void {
+    this.options.textureKey = textureKey;
+    this.showIdleFrame();
+  }
+
   /** Turn without moving. Used by the turn-in-place path and on a bump. */
   face(direction: Direction): void {
     this.applyFacing(direction, true);
@@ -220,6 +235,11 @@ export class GridMovement {
     // `true` = ignoreIfPlaying, so chained tiles don't restart the walk cycle.
     this.sprite.anims.play(walkAnimKey(this.options.textureKey, direction), true);
 
+    if (this.options.audible) {
+      this.stepParity += 1;
+      sfx.step(this.stepParity);
+    }
+
     const to = tileToWorld(target);
     this.activeTween = this.scene.tweens.add({
       targets: this.sprite,
@@ -255,6 +275,7 @@ export class GridMovement {
 
     this.setState('WALKING'); // input-locked for the duration of the nudge
     this.showIdleFrame();
+    if (this.options.audible) sfx.bump();
     this.options.onBump?.(direction);
 
     const vector = DIRECTION_VECTORS[direction];

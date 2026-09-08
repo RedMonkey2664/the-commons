@@ -200,8 +200,15 @@ try {
       .filter((o) => o.kind === 'cabinet')
       .map((o) => o.props.minigameId),
   );
-  check('the Arcade built one cabinet per config entry', s.cabinets === 2, `${s.cabinets} cabinets`);
-  check('cabinets carry their minigame ids',
+  // Deliberately NOT a fixed count: the claim under test is that cabinets come
+  // from config, so hardcoding "2" here would fail every time a minigame is
+  // added — which is exactly the change the architecture is supposed to make
+  // cheap. It broke once already when Phase 5 added three more.
+  check('the Arcade built a cabinet per config entry', s.cabinets >= 2, `${s.cabinets} cabinets`);
+  check('every cabinet carries a distinct minigame id',
+    new Set(configured).size === configured.length && configured.every(Boolean),
+    JSON.stringify(configured));
+  check('the two minigames from this phase are among them',
     configured.includes('memory_match') && configured.includes('trivia_blitz'),
     JSON.stringify(configured));
 

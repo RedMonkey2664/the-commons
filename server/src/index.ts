@@ -203,6 +203,45 @@ app.post('/voice/token', async (request, response) => {
   }
 });
 
+/**
+ * Everything a client needs to work out which cosmetics are unlocked (06).
+ *
+ * The unlock RULES live in shared/cosmetics.ts and are evaluated client-side;
+ * this only reports the facts they are evaluated against. That keeps unlock
+ * thresholds tunable without a migration, and means the server never has to
+ * store a list of "owned" cosmetics that could drift from the scores that
+ * earned them.
+ *
+ * These are cosmetic-only by design, so client-side evaluation costs nothing:
+ * the worst a tampered client achieves is wearing a different colour.
+ */
+app.get('/progress/:userId', async (request, response) => {
+  try {
+    const store = getStore();
+    const userId = request.params.userId;
+
+    const bestScores: Record<string, number> = {};
+    for (const minigame of MINIGAMES) {
+      const board = await store.topScores(minigame.id, 1000);
+      const mine = board.find((row) => row.userId === userId);
+      if (mine) bestScores[minigame.id] = mine.score;
+    }
+
+    const [totalPlays, study] = await Promise.all([
+      store.countPlays(userId),
+      store.getStudyTotals(userId),
+    ]);
+
+    response.json({
+      bestScores,
+      totalPlays,
+      studyMinutes: Math.floor(study.totalSeconds / 60),
+    });
+  } catch (error) {
+    response.status(500).json({ error: (error as Error).message });
+  }
+});
+
 /** Study totals for the HUD / profile. */
 app.get('/study/:userId', async (request, response) => {
   try {

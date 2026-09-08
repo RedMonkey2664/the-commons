@@ -55,6 +55,23 @@ export async function fetchScores(minigameId: string, submitScore?: number): Pro
   return body.scores ?? [];
 }
 
+/** Unlock facts for cosmetics (06). Rules are applied client-side. */
+export async function fetchProgress(): Promise<
+  { bestScores: Record<string, number>; totalPlays: number; studyMinutes: number } | null
+> {
+  try {
+    const response = await fetch(`${httpBase()}/progress/${encodeURIComponent(session.userId)}`);
+    if (!response.ok) return null;
+    return (await response.json()) as {
+      bestScores: Record<string, number>;
+      totalPlays: number;
+      studyMinutes: number;
+    };
+  } catch {
+    return null;
+  }
+}
+
 export interface StudyTotalsResponse {
   totalSeconds: number;
   sessionCount: number;

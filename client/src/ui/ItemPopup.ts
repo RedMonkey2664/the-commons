@@ -8,6 +8,7 @@
 
 import Phaser from 'phaser';
 import { COLORS, SPACING, TYPOGRAPHY, UI, hex } from '@commons/shared';
+import { sfx } from '../systems/Sfx';
 
 const WIDTH = 380;
 const HEIGHT = 76;
@@ -84,6 +85,7 @@ export class ItemPopup {
       return;
     }
     this.showing = true;
+    sfx.reward();
 
     this.label.setText(item.message);
 

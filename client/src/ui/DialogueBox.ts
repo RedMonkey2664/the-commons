@@ -15,6 +15,7 @@
 
 import Phaser from 'phaser';
 import { COLORS, SPACING, TYPOGRAPHY, UI, hex } from '@commons/shared';
+import { sfx } from '../systems/Sfx';
 
 const LINES_PER_PAGE = 3;
 const LINE_SPACING = 8;
@@ -190,6 +191,7 @@ export class DialogueBox {
       return true;
     }
 
+    sfx.dialogueAdvance();
     this.pageIndex += 1;
     if (this.pageIndex >= this.pages.length) {
       this.close();
@@ -267,6 +269,9 @@ export class DialogueBox {
       callback: () => {
         this.revealed += 1;
         this.text.setText(page.slice(0, this.revealed));
+        // Skip spaces: ticking on every character including gaps reads as a
+        // buzz rather than as speech.
+        if (page[this.revealed - 1] !== ' ') sfx.dialogueTick();
         if (this.revealed >= page.length) this.showAdvanceArrow();
       },
     });

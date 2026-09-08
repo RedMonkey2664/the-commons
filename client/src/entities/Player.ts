@@ -13,6 +13,7 @@ import { SIT } from '@commons/shared';
 /** How far the sprite settles when seated. Paired with the 150ms cross-fade. */
 const SIT_OFFSET_Y = 7;
 import { GridMovement, tileToWorld } from '../systems/GridMovement';
+import { sfx } from '../systems/Sfx';
 import { registerCharacterAnimations } from '../art/characterAnimations';
 import { ASSET_KEYS } from '../art/placeholderArt';
 
@@ -51,10 +52,24 @@ export class Player {
       facing: options.facing ?? 'down',
       isWalkable: options.isWalkable,
       textureKey,
+      // Only the local player is audible; see GridMovementOptions.audible.
+      audible: true,
       onDepart: options.onDepart,
       onArrive: options.onArrive,
       onFacingChanged: options.onFacingChanged,
     });
+  }
+
+  /**
+   * Swap the character sheet, e.g. after choosing a cosmetic.
+   *
+   * Animations are keyed by texture, so the new sheet's cycles are registered
+   * before the movement system asks for them.
+   */
+  setTexture(textureKey: string): void {
+    registerCharacterAnimations(this.scene, textureKey);
+    this.sprite.setTexture(textureKey);
+    this.movement.setTextureKey(textureKey);
   }
 
   get tile(): TileCoord {
@@ -83,6 +98,7 @@ export class Player {
    */
   sit(status: PlayerStatus = 'idle'): void {
     if (this.isSitting) return;
+    sfx.sit();
     this.movement.setSitting(true);
     this.status = status;
     // Absolute target from the tile, never a relative offset: two of these

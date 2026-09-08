@@ -30,6 +30,15 @@ export const MINIGAME_CLIENT_MESSAGE = {
 export const MINIGAME_SERVER_MESSAGE = {
   /** A new question/round has begun. */
   round: 'mg:round',
+  /**
+   * Something happened DURING a round that clients must see but could not be
+   * told in advance.
+   *
+   * Reaction Tap is the reason this exists: the moment the light turns green
+   * cannot be in the round payload, or a client could schedule a perfect tap
+   * before it arrives. The server holds it back and fires this instead.
+   */
+  cue: 'mg:cue',
   /** The round resolved; carries per-player results. */
   result: 'mg:result',
   /** The whole game finished; carries final standings. */
@@ -81,6 +90,36 @@ export interface MinigameScene {
   onEnd(): void;
   reportScore(playerId: string, score: number): void;
 }
+
+/**
+ * Reaction Tap (06).
+ *
+ * Shared because the client needs the window length to draw its timer, and the
+ * server needs it to score. One definition, imported by both.
+ *
+ * The honest caveat, stated in the game itself: the server measures when your
+ * tap ARRIVES, so your network latency is part of your time. Measuring on the
+ * client would be fairer and completely unenforceable — a client could report
+ * 3ms every round. 06 requires round outcomes to be computed server-side, and
+ * this is what that costs. For a group laughing at each other it is the right
+ * trade; it would be the wrong one for a leaderboard that mattered.
+ */
+export const REACTION_TAP_RULES = {
+  rounds: 5,
+  /** Random hold before the light turns green. */
+  minHoldMs: 1200,
+  maxHoldMs: 4200,
+  /** How long the light stays green before the round is a bust. */
+  windowMs: 2500,
+  countdownMs: 2500,
+  revealMs: 2400,
+  lobbyWaitMs: 20_000,
+  /** Points for an instant reaction, decaying across the window. */
+  maxPoints: 120,
+  minPoints: 10,
+  /** Tapping before green scores nothing, and it says so. */
+  falseStartPoints: 0,
+} as const;
 
 /**
  * Round pacing (11): "rounds should target 2-5 minutes".

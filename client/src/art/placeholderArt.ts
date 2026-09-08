@@ -1521,6 +1521,22 @@ export function generateInteractableSprites(scene: Phaser.Scene): void {
   });
 }
 
+/**
+ * Texture key for a character sheet in a given outfit colour.
+ *
+ * Generated on demand and cached by key, so choosing a cosmetic does not
+ * require pre-rendering every combination at boot.
+ */
+export function outfitTextureKey(color: string): string {
+  return `char_outfit_${color.replace('#', '')}`;
+}
+
+export function ensureOutfitSheet(scene: Phaser.Scene, color: string): string {
+  const key = outfitTextureKey(color);
+  if (!scene.textures.exists(key)) generateCharacterSheet(scene, key, color);
+  return key;
+}
+
 /** Everything the game needs. One call from BootScene. */
 export function generateAllPlaceholderArt(scene: Phaser.Scene): void {
   generateTileset(scene);

@@ -1341,6 +1341,16 @@
      ]
     },
     {
+     "id": 39,
+     "properties": [
+      {
+       "name": "ambient",
+       "type": "string",
+       "value": "bandstandPulse"
+      }
+     ]
+    },
+    {
      "id": 40,
      "properties": [
       {
@@ -1407,6 +1417,11 @@
        "name": "collides",
        "type": "bool",
        "value": true
+      },
+      {
+       "name": "ambient",
+       "type": "string",
+       "value": "pageTurn"
       }
      ]
     },
@@ -1421,7 +1436,7 @@
       {
        "name": "ambient",
        "type": "string",
-       "value": "windowFlicker"
+       "value": "cabinetFlicker"
       }
      ]
     },
@@ -1467,6 +1482,16 @@
        "name": "collides",
        "type": "bool",
        "value": true
+      }
+     ]
+    },
+    {
+     "id": 55,
+     "properties": [
+      {
+       "name": "ambient",
+       "type": "string",
+       "value": "cafeSteam"
       }
      ]
     }

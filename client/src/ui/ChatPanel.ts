@@ -14,6 +14,7 @@
 import Phaser from 'phaser';
 import type { ChatMessage } from '@commons/shared';
 import { CHAT_LIMITS, COLORS, SPACING, TYPOGRAPHY, hex } from '@commons/shared';
+import { sfx } from '../systems/Sfx';
 
 const PANEL_WIDTH = 340;
 const VISIBLE_LINES = 7;
@@ -151,6 +152,7 @@ export class ChatPanel {
   // -- log ------------------------------------------------------------------
 
   append(message: ChatMessage): void {
+    if (!message.system) sfx.chat();
     this.history.push(message);
     if (this.history.length > CHAT_LIMITS.historySize) this.history.shift();
     this.refreshLog();

@@ -33,6 +33,33 @@ export const MINIGAMES: MinigameConfig[] = [
     maxPlayers: 4,
     blurb: 'Eight questions. Faster answers score more.',
   },
+  {
+    id: 'reaction_tap',
+    displayName: 'Reaction Tap',
+    cabinetSpriteKey: 'obj_cabinet_lit',
+    sceneKey: 'ReactionTapScene',
+    minPlayers: 1,
+    maxPlayers: 4,
+    blurb: 'Tap when it turns green. Not before.',
+  },
+  {
+    id: 'retro_runner',
+    displayName: 'Retro Runner',
+    cabinetSpriteKey: 'obj_cabinet_lit',
+    sceneKey: 'RetroRunnerScene',
+    minPlayers: 1,
+    maxPlayers: 1,
+    blurb: 'Run, jump, last as long as you can.',
+  },
+  {
+    id: 'rhythm_tap',
+    displayName: 'Rhythm Tap',
+    cabinetSpriteKey: 'obj_cabinet_lit',
+    sceneKey: 'RhythmTapScene',
+    minPlayers: 1,
+    maxPlayers: 1,
+    blurb: 'The jukebox tracks, played back at you.',
+  },
 ];
 
 export function getMinigame(id: string): MinigameConfig | undefined {
