@@ -16,6 +16,8 @@ interface StoredSession {
   spriteKey?: string;
   /** Stable across sessions on this browser. See Session.userId. */
   userId?: string;
+  /** Per-zone manual mic overrides. See Session.voiceOverride. */
+  voiceOverrides?: Record<string, boolean>;
 }
 
 function read(): StoredSession {
@@ -85,6 +87,28 @@ class Session {
       /* private windows throw on storage access */
     }
     return (import.meta.env['VITE_SERVER_URL'] as string | undefined) ?? 'ws://localhost:2567';
+  }
+
+  /**
+   * Manual microphone override for a zone, or undefined to follow the zone
+   * default (05, 11).
+   *
+   * Kept HERE rather than on VoiceClient because a VoiceClient is built fresh
+   * every time a zone scene is created — so an override stored on it vanished
+   * the moment you walked out of the room and back in, which is exactly the
+   * "defaults trapping someone" behaviour the override exists to prevent.
+   * As a player preference it also rightly survives a reload.
+   */
+  voiceOverride(zoneId: string): boolean | undefined {
+    return this.state.voiceOverrides?.[zoneId];
+  }
+
+  setVoiceOverride(zoneId: string, muted: boolean): void {
+    this.state = {
+      ...this.state,
+      voiceOverrides: { ...(this.state.voiceOverrides ?? {}), [zoneId]: muted },
+    };
+    write(this.state);
   }
 
   /** True once the player has been through name entry. */

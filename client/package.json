@@ -12,6 +12,7 @@
   "dependencies": {
     "@commons/shared": "*",
     "colyseus.js": "^0.16.0",
+    "livekit-client": "^2.22.3",
     "phaser": "^3.80.0"
   },
   "devDependencies": {

@@ -6,5 +6,7 @@ export * from './net.js';
 export * from './chat.js';
 export * from './persistence.js';
 export * from './minigames.js';
+export * from './jukebox.js';
+export * from './voice.js';
 export * from './zones.config.js';
 export * from './minigames.config.js';

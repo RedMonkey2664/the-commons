@@ -11,6 +11,8 @@ import type {
   ChatRejected,
   CorrectionMessage,
   Direction,
+  JukeboxRejected,
+  JukeboxState,
   PlayerStatus,
   ZoneId,
 } from '@commons/shared';
@@ -18,6 +20,8 @@ import {
   CHAT_CLIENT_MESSAGE,
   CHAT_SERVER_MESSAGE,
   CLIENT_MESSAGE,
+  JUKEBOX_CLIENT_MESSAGE,
+  JUKEBOX_SERVER_MESSAGE,
   SERVER_MESSAGE,
   ZONE_ROOM_TYPE,
 } from '@commons/shared';
@@ -55,6 +59,8 @@ export interface NetworkHandlers {
   onCorrection?: (message: CorrectionMessage) => void;
   onChat?: (message: ChatMessage) => void;
   onChatRejected?: (message: ChatRejected) => void;
+  onJukebox?: (state: JukeboxState) => void;
+  onJukeboxRejected?: (message: JukeboxRejected) => void;
   onError?: (error: Error) => void;
   onLeave?: (code: number) => void;
 }
@@ -174,6 +180,14 @@ export class NetworkClient {
       this.handlers.onChatRejected?.(message);
     });
 
+    room.onMessage(JUKEBOX_SERVER_MESSAGE.state, (state: JukeboxState) => {
+      this.handlers.onJukebox?.(state);
+    });
+
+    room.onMessage(JUKEBOX_SERVER_MESSAGE.rejected, (message: JukeboxRejected) => {
+      this.handlers.onJukeboxRejected?.(message);
+    });
+
     room.onError((code, message) => {
       this.handlers.onError?.(new Error(`room error ${code}: ${message ?? ''}`));
     });
@@ -213,6 +227,14 @@ export class NetworkClient {
 
   sendChat(text: string): void {
     this.room?.send(CHAT_CLIENT_MESSAGE.say, { text });
+  }
+
+  queueTrack(trackId: string): void {
+    this.room?.send(JUKEBOX_CLIENT_MESSAGE.queue, { trackId });
+  }
+
+  voteSkipTrack(): void {
+    this.room?.send(JUKEBOX_CLIENT_MESSAGE.skip, {});
   }
 
   async leave(): Promise<void> {

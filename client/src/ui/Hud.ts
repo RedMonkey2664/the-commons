@@ -9,6 +9,7 @@
  */
 
 import Phaser from 'phaser';
+import type { VoiceAvailability, VoiceConnectionState } from '@commons/shared';
 import { COLORS, SPACING, TYPOGRAPHY, UI, hex } from '@commons/shared';
 
 export class Hud {
@@ -18,6 +19,8 @@ export class Hud {
   private readonly statusDot: Phaser.GameObjects.Arc;
   private readonly statusLabel: Phaser.GameObjects.Text;
   private readonly hint: Phaser.GameObjects.Text;
+  private readonly micPill: Phaser.GameObjects.Graphics;
+  private readonly micLabel: Phaser.GameObjects.Text;
   private readonly container: Phaser.GameObjects.Container;
 
   private connected = false;
@@ -42,8 +45,17 @@ export class Hud {
       })
       .setOrigin(1, 0.5);
 
+    this.micPill = scene.add.graphics();
+    this.micLabel = scene.add
+      .text(0, 0, '', {
+        fontFamily: TYPOGRAPHY.dialogueFont,
+        fontSize: `${TYPOGRAPHY.hudFontSize}px`,
+        color: COLORS.hudText,
+      })
+      .setOrigin(1, 0.5);
+
     this.hint = scene.add
-      .text(0, 0, 'WASD move   SPACE interact   ENTER chat   ESC friends', {
+      .text(0, 0, 'WASD move   SPACE interact   ENTER chat   M mic   ESC friends', {
         fontFamily: TYPOGRAPHY.dialogueFont,
         fontSize: `${TYPOGRAPHY.hudFontSize}px`,
         color: COLORS.hudText,
@@ -56,6 +68,7 @@ export class Hud {
       .container(0, 0, [
         this.zonePill, this.zoneLabel,
         this.statusPill, this.statusDot, this.statusLabel,
+        this.micPill, this.micLabel,
         this.hint,
       ])
       .setDepth(900);
@@ -95,7 +108,44 @@ export class Hud {
     this.statusPill.fillStyle(hex(COLORS.hudBg), 0.92);
     this.statusPill.fillRoundedRect(statusX, m, statusWidth, pillHeight, 8);
 
+    // Mic pill sits under the connection pill, top-right.
+    this.micLabel.setPosition(width - m - 14, m + pillHeight + 10 + pillHeight / 2);
+    const micWidth = this.micLabel.width + 28;
+    const micX = width - m - micWidth;
+    this.micPill.clear();
+    if (this.micLabel.text.length > 0) {
+      this.micPill.fillStyle(0x000000, 0.25);
+      this.micPill.fillRoundedRect(micX + 2, m + pillHeight + 13, micWidth, pillHeight, 8);
+      this.micPill.fillStyle(hex(COLORS.hudBg), 0.92);
+      this.micPill.fillRoundedRect(micX, m + pillHeight + 10, micWidth, pillHeight, 8);
+    }
+
     this.hint.setPosition(m, height - m);
+  }
+
+  /**
+   * Voice state (05, 07's "mic/chat status icon").
+   *
+   * Says WHY the mic is off, not just that it is. "muted" and "voice isn't set
+   * up on this server" are completely different situations for a player, and a
+   * single greyed-out icon would conflate them.
+   */
+  setVoice(state: VoiceConnectionState, availability: VoiceAvailability, muted: boolean): void {
+    let text = '';
+    if (availability === 'not_configured') text = 'MIC  —  not set up';
+    else if (availability === 'no_permission') text = 'MIC  —  blocked';
+    else if (availability === 'unavailable') text = 'MIC  —  unavailable';
+    else if (state === 'connecting') text = 'MIC  …';
+    else if (state === 'failed') text = 'MIC  —  failed';
+    else if (state === 'connected') text = muted ? 'MIC  muted' : 'MIC  live';
+    else text = muted ? 'MIC  muted' : 'MIC  on';
+
+    this.micLabel.setText(text);
+    this.micLabel.setColor(
+      state === 'connected' && !muted ? COLORS.statusStudying : COLORS.hudText,
+    );
+    this.micLabel.setAlpha(availability === 'ready' ? 1 : 0.6);
+    this.layout();
   }
 
   setZoneName(name: string): void {

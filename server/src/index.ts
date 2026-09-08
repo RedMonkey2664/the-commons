@@ -10,7 +10,14 @@ import cors from 'cors';
 import express from 'express';
 import { Server } from 'colyseus';
 import { WebSocketTransport } from '@colyseus/ws-transport';
-import { MINIGAME_ROOM_TYPE, MINIGAMES, ZONE_ROOM_TYPE, ZONES } from '@commons/shared';
+import {
+  MINIGAME_ROOM_TYPE,
+  MINIGAMES,
+  VOICE_LIMITS,
+  ZONE_ROOM_TYPE,
+  ZONES,
+  voiceRoomFor,
+} from '@commons/shared';
 import { ZoneRoom } from './rooms/ZoneRoom.js';
 import { MinigameRoom } from './rooms/MinigameRoom.js';
 import { loadZoneMap } from './world/zoneMaps.js';
@@ -28,6 +35,7 @@ app.get('/health', (_request, response) => {
     zones: ZONES.map((z) => z.id),
     minigames: MINIGAMES.map((m) => m.id),
     store: getStore().kind,
+    voice: process.env['LIVEKIT_API_KEY'] ? 'configured' : 'not_configured',
   });
 });
 
@@ -96,6 +104,60 @@ app.post('/scores/:minigameId', async (request, response) => {
     response.json(result);
   } catch (error) {
     response.status(500).json({ error: (error as Error).message });
+  }
+});
+
+/**
+ * Voice token (05, Phase 4).
+ *
+ * The client never touches WebRTC directly — 05 says not to hand-roll a mesh —
+ * so it asks here for a short-lived token and hands that to the provider SDK.
+ *
+ * UNVERIFIED: LIVEKIT_API_KEY / LIVEKIT_API_SECRET were not available, so this
+ * has never minted a token a real provider accepted. Without them it returns
+ * `not_configured`, which the client surfaces as "voice is not set up" rather
+ * than a mic button that silently does nothing.
+ */
+app.post('/voice/token', async (request, response) => {
+  const body = request.body as { zoneId?: unknown; identity?: unknown; displayName?: unknown };
+
+  const zoneId = typeof body.zoneId === 'string' ? body.zoneId : '';
+  const identity = typeof body.identity === 'string' ? body.identity.slice(0, 64) : '';
+  const zone = ZONES.find((z) => z.id === zoneId);
+
+  if (!zone || !identity) {
+    response.status(400).json({ error: 'zoneId and identity are required' });
+    return;
+  }
+
+  const apiKey = process.env['LIVEKIT_API_KEY'];
+  const apiSecret = process.env['LIVEKIT_API_SECRET'];
+  const url = process.env['LIVEKIT_URL'];
+
+  if (!apiKey || !apiSecret || !url) {
+    response.json({ availability: 'not_configured' });
+    return;
+  }
+
+  try {
+    const { AccessToken } = await import('livekit-server-sdk');
+    const room = voiceRoomFor(zone);
+    const at = new AccessToken(apiKey, apiSecret, {
+      identity,
+      ttl: VOICE_LIMITS.tokenTtlSeconds,
+    });
+    at.addGrant({ roomJoin: true, room, canPublish: true, canSubscribe: true });
+
+    response.json({
+      availability: 'ready',
+      room,
+      url,
+      identity,
+      token: await at.toJwt(),
+    });
+  } catch (error) {
+    console.warn('[voice] token mint failed:', (error as Error).message);
+    response.json({ availability: 'unavailable' });
   }
 });
 

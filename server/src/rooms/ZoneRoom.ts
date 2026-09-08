@@ -31,6 +31,8 @@ import {
   CHAT_RATE_LIMIT,
   CHAT_SERVER_MESSAGE,
   CLIENT_MESSAGE,
+  JUKEBOX_CLIENT_MESSAGE,
+  JUKEBOX_SERVER_MESSAGE,
   MAX_STUDY_SECONDS,
   MIN_STUDY_SECONDS,
   MOVE_RATE_LIMIT,
@@ -39,9 +41,11 @@ import {
   resolveEntryPoint,
   tileInFront,
 } from '@commons/shared';
+import type { JukeboxRejected, JukeboxState, QueueIntent } from '@commons/shared';
 import { PlayerSchema, ZoneState } from '../schemas/PlayerState.js';
 import { loadZoneMap, type ServerZoneMap } from '../world/zoneMaps.js';
 import { getStore } from '../db/client.js';
+import { Jukebox, zoneHasJukebox } from './jukebox.js';
 
 const VALID_DIRECTIONS: readonly Direction[] = ['up', 'down', 'left', 'right'];
 const VALID_STATUSES = ['idle', 'studying', 'listening', 'afk'] as const;
@@ -78,6 +82,8 @@ export class ZoneRoom extends Room<ZoneState> {
   private zoneMap!: ServerZoneMap;
   private readonly budgets = new Map<string, ClientBudget>();
   private readonly studySessions = new Map<string, OpenStudySession>();
+  /** Only zones that actually have one (Cafe, Park). */
+  private jukebox?: Jukebox;
   /** Stable user id per session, so persistence is not keyed on a socket. */
   private readonly userIds = new Map<string, string>();
 
@@ -104,6 +110,31 @@ export class ZoneRoom extends Room<ZoneState> {
     this.onMessage(CHAT_CLIENT_MESSAGE.say, (client, message: ChatSayIntent) => {
       this.handleChat(client, message);
     });
+
+    // 03 puts a jukebox in the Cafe and a bandstand in the Park; every other
+    // zone gets no jukebox state at all rather than an inert one.
+    if (zoneHasJukebox(this.zone.interactables)) {
+      this.jukebox = new Jukebox({
+        broadcastState: (state) => this.broadcast(JUKEBOX_SERVER_MESSAGE.state, state),
+        rejectTo: (sessionId, message) => {
+          this.clients.find((c) => c.sessionId === sessionId)?.send(
+            JUKEBOX_SERVER_MESSAGE.rejected,
+            message satisfies JukeboxRejected,
+          );
+        },
+        listenerCount: () => this.clients.length,
+      });
+
+      this.onMessage(JUKEBOX_CLIENT_MESSAGE.queue, (client, message: QueueIntent) => {
+        const player = this.state.players.get(client.sessionId);
+        if (!player || typeof message?.trackId !== 'string') return;
+        this.jukebox?.request(client.sessionId, player.displayName, message.trackId);
+      });
+
+      this.onMessage(JUKEBOX_CLIENT_MESSAGE.skip, (client) => {
+        this.jukebox?.voteSkip(client.sessionId);
+      });
+    }
 
     console.log(`[zone] room created: ${this.zone.displayName} (${this.roomId})`);
   }
@@ -151,6 +182,13 @@ export class ZoneRoom extends Room<ZoneState> {
         console.warn('[zone] could not record user:', (error as Error).message);
       });
 
+    // Send the jukebox state to the new arrival only: everyone else already
+    // has it, and the clock they are playing against must not be reset.
+    if (this.jukebox) {
+      this.jukebox.onFirstListener();
+      client.send(JUKEBOX_SERVER_MESSAGE.state, this.jukebox.snapshot() satisfies JukeboxState);
+    }
+
     console.log(`[zone] ${player.displayName} joined ${this.zone.displayName} (${this.clients.length} present)`);
   }
 
@@ -164,10 +202,12 @@ export class ZoneRoom extends Room<ZoneState> {
     this.state.players.delete(client.sessionId);
     this.budgets.delete(client.sessionId);
     this.userIds.delete(client.sessionId);
+    this.jukebox?.onLeave(client.sessionId);
     console.log(`[zone] ${player?.displayName ?? client.sessionId} left ${this.zone.displayName}`);
   }
 
   override onDispose(): void {
+    this.jukebox?.dispose();
     // Anyone still seated when the room dies keeps the time they accrued.
     for (const sessionId of [...this.studySessions.keys()]) this.closeStudySession(sessionId);
     console.log(`[zone] room disposed: ${this.zone.displayName} (${this.roomId})`);

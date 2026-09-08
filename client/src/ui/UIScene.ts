@@ -15,6 +15,7 @@ import Phaser from 'phaser';
 import { ChatPanel } from './ChatPanel';
 import { DialogueBox } from './DialogueBox';
 import { FriendsPanel } from './FriendsPanel';
+import { JukeboxPanel } from './JukeboxPanel';
 import { Hud } from './Hud';
 import { ItemPopup } from './ItemPopup';
 
@@ -26,6 +27,7 @@ export class UIScene extends Phaser.Scene {
   hud!: Hud;
   friends!: FriendsPanel;
   chat!: ChatPanel;
+  jukebox!: JukeboxPanel;
 
   constructor() {
     super({ key: UIScene.KEY });
@@ -37,6 +39,7 @@ export class UIScene extends Phaser.Scene {
     this.hud = new Hud(this);
     this.friends = new FriendsPanel(this);
     this.chat = new ChatPanel(this);
+    this.jukebox = new JukeboxPanel(this);
 
     // Transparent overlay — the world scene below stays visible.
     this.cameras.main.setBackgroundColor('rgba(0,0,0,0)');
@@ -86,6 +89,10 @@ class UiFacade {
 
   get chat(): ChatPanel | undefined {
     return this.scene?.chat;
+  }
+
+  get jukebox(): JukeboxPanel | undefined {
+    return this.scene?.jukebox;
   }
 }
 

@@ -25,6 +25,8 @@ export interface InteractionContext {
   setBlocked: (blocked: boolean) => void;
   /** Pause this zone and hand the screen to a minigame scene. */
   launchMinigame: (sceneKey: string) => void;
+  /** Open the shared jukebox queue. False when this zone has no jukebox. */
+  openJukebox: () => boolean;
   /** Walk out of this zone into another. Owned by ZoneScene (fade + room swap). */
   transitionTo: (zoneId: ZoneId) => void;
   isSitting: () => boolean;
@@ -137,15 +139,15 @@ export const INTERACTABLE_HANDLERS: Partial<Record<InteractableKind, Interaction
   },
 
   /**
-   * Jukebox and bandstand. The shared queue is Phase 4 — this reports the state
-   * of things rather than pretending to play something.
+   * Jukebox and bandstand — one shared queue per room (03).
+   *
+   * Opens the queue panel rather than saying anything: the interesting state is
+   * what the ROOM is playing, and a dialogue box cannot show a live queue.
    */
   jukebox: (ctx) => {
-    speak(
-      ctx,
-      `${textOf(ctx.object, 'A jukebox.')}|` +
-        'The shared queue is not wired up yet, so for now it just hums to itself.',
-    );
+    if (!ctx.openJukebox()) {
+      speak(ctx, `${textOf(ctx.object, 'A jukebox.')}|It is not connected to anything right now.`);
+    }
   },
 
   /**

@@ -31,6 +31,8 @@ import { ZoneMap } from '../systems/ZoneMap';
 import { UIScene, ui } from '../ui/UIScene';
 import { MultiplayerSystem } from '../systems/MultiplayerSystem';
 import { NetworkClient } from '../systems/NetworkClient';
+import { JukeboxPlayer } from '../systems/JukeboxPlayer';
+import { VoiceClient } from '../systems/VoiceClient';
 import { session } from '../session';
 
 /** Scene data accepted when starting a zone. */
@@ -58,6 +60,9 @@ export abstract class ZoneScene extends Phaser.Scene {
   protected ambient?: AmbientAnimator;
   protected network?: NetworkClient;
   protected multiplayer?: MultiplayerSystem;
+  /** Only created in zones that have a jukebox. */
+  protected jukeboxAudio?: JukeboxPlayer;
+  protected voice?: VoiceClient;
 
   private sceneData: ZoneSceneData = {};
   /** Tracks hint visibility so it is only toggled on an actual change. */
@@ -133,10 +138,37 @@ export abstract class ZoneScene extends Phaser.Scene {
         this.multiplayer?.pushStatus('idle');
       },
       launchMinigame: (sceneKey) => this.launchMinigame(sceneKey),
+      openJukebox: () => {
+        if (!this.jukeboxAudio) return false;
+        // Browsers block audio until a gesture; interacting with the jukebox
+        // IS that gesture, so unlock here rather than on some later click.
+        void this.jukeboxAudio.unlock();
+        ui.jukebox?.show();
+        this.player.setBlocked(true);
+        return true;
+      },
     });
 
     this.createPlayer();
     this.configureCamera();
+
+    // 03 puts a jukebox in the Cafe and a bandstand in the Park. Zones without
+    // one build no audio engine at all rather than an idle one.
+    if (this.zone.interactables.some((id) => id === 'jukebox' || id === 'bandstand')) {
+      this.jukeboxAudio = new JukeboxPlayer();
+    }
+
+    this.voice = new VoiceClient();
+    this.voice.setHandlers({
+      onStateChanged: (state, availability) =>
+        ui.hud?.setVoice(state, availability, this.voice?.isMuted ?? true),
+      onMuteChanged: (muted) => {
+        ui.hud?.setVoice(this.voice?.state ?? 'idle', this.voice?.availabilityState ?? 'ready', muted);
+        // The jukebox ducks when your mic opens, so a room can talk over music
+        // without anyone reaching for a volume control.
+        this.jukeboxAudio?.setVolume(muted ? 0.5 : 0.22);
+      },
+    });
 
     this.ensureUi();
 
@@ -144,6 +176,11 @@ export abstract class ZoneScene extends Phaser.Scene {
     // boot UIScene has been launched but has not run create() yet, so the panel
     // does not exist to be configured.
     this.time.delayedCall(0, () => {
+      ui.jukebox?.setHandlers({
+        onQueue: (trackId) => this.network?.queueTrack(trackId),
+        onSkip: () => this.network?.voteSkipTrack(),
+      });
+
       ui.chat?.setSendHandler((text) => {
         if (this.network?.isConnected) this.network.sendChat(text);
         else ui.chat?.system('not connected — nobody can hear you');
@@ -185,8 +222,8 @@ export abstract class ZoneScene extends Phaser.Scene {
       return;
     }
 
-    // The composer owns the keyboard while it is open.
-    if (ui.chat?.isComposing) {
+    // The composer and the jukebox panel each own the keyboard while open.
+    if (ui.chat?.isComposing || ui.jukebox?.isOpen) {
       this.controls.reset();
       return;
     }
@@ -390,14 +427,58 @@ export abstract class ZoneScene extends Phaser.Scene {
 
       // Enter opens the composer, but not on top of a dialogue box or panel —
       // those already own the keyboard.
+      // The jukebox panel is modal while open.
+      if (ui.jukebox?.isOpen) {
+        const wasOpen = ui.jukebox.isOpen;
+        ui.jukebox.handleKey(event);
+        if (wasOpen && !ui.jukebox.isOpen) this.player?.setBlocked(false);
+        this.controls.reset();
+        return;
+      }
+
       if (event.key === 'Enter' && !ui.dialogue?.isVisible && !ui.friends?.isOpen) {
         chat.open();
         this.controls.reset();
+        return;
+      }
+
+      // 05: a manual override is always available, whatever the zone default.
+      if (event.key.toLowerCase() === 'm' && !ui.dialogue?.isVisible && !ui.friends?.isOpen) {
+        void this.voice?.toggleMute(this.zone);
       }
     };
 
     keyboard.on('keydown', onKey);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => keyboard.off('keydown', onKey));
+  }
+
+  /**
+   * Start, move or stop the local audio to match the room.
+   *
+   * The offset is computed from the SERVER's clock, corrected for the gap
+   * between the two machines, so someone who walks in halfway through a track
+   * hears the same bar as everyone already standing there (03).
+   */
+  private applyJukeboxAudio(state: import('@commons/shared').JukeboxState): void {
+    const audio = this.jukeboxAudio;
+    if (!audio) return;
+
+    if (!state.now) {
+      audio.stop();
+      return;
+    }
+
+    const skew = state.serverNow - Date.now();
+    const offsetMs = Date.now() + skew - state.startedAt;
+
+    // Past the end already (a stale message, or a long round trip): let the
+    // next broadcast place us rather than starting a track that has finished.
+    if (offsetMs < 0 || offsetMs > state.now.track.durationMs) {
+      audio.stop();
+      return;
+    }
+
+    audio.play(state.now.track, offsetMs);
   }
 
   /**
@@ -506,6 +587,19 @@ export abstract class ZoneScene extends Phaser.Scene {
               this.multiplayer?.showChatBubble(message.authorId, message.text);
             }
           },
+          onJukebox: (state) => {
+            ui.jukebox?.applyState(state);
+            this.applyJukeboxAudio(state);
+          },
+          onJukeboxRejected: ({ reason }) => {
+            ui.chat?.system(
+              reason === 'rate_limited'
+                ? 'give the jukebox a moment'
+                : reason === 'queue_full'
+                  ? 'the queue is full'
+                  : 'that track is not in the catalogue',
+            );
+          },
           onChatRejected: ({ reason }) => {
             ui.chat?.system(
               reason === 'rate_limited'
@@ -525,6 +619,10 @@ export abstract class ZoneScene extends Phaser.Scene {
         },
       );
       ui.hud?.setConnected(true);
+
+      // 05: the voice room maps to the same zone boundary, and the zone's
+      // default mute applies automatically on arrival.
+      void this.voice?.joinZone(this.zone);
     } catch (error) {
       console.warn('[net] offline — running single-player:', (error as Error).message);
       ui.hud?.setConnected(false);
@@ -533,6 +631,10 @@ export abstract class ZoneScene extends Phaser.Scene {
   }
 
   private teardown(): void {
+    this.jukeboxAudio?.destroy();
+    this.jukeboxAudio = undefined;
+    void this.voice?.leave();
+    this.voice = undefined;
     void this.network?.leave();
     this.network = undefined;
     this.multiplayer?.destroy();
