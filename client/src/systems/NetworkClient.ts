@@ -73,6 +73,10 @@ export class NetworkClient {
   private readonly client: Client;
   private room?: Room;
   private handlers: NetworkHandlers = {};
+  /** In-flight join, so leave() can wait for it instead of no-opping. */
+  private joining?: Promise<void>;
+  /** Set when leave() is called before the join lands. */
+  private abandoned = false;
 
   /** Monotonic intent counter, echoed back by the server as `lastSeq`. */
   private seq = 0;
@@ -99,6 +103,19 @@ export class NetworkClient {
     identity: { displayName: string; spriteKey: string; fromZone?: string },
     handlers: NetworkHandlers,
   ): Promise<void> {
+    this.joining = this.doJoin(zoneId, identity, handlers);
+    try {
+      await this.joining;
+    } finally {
+      this.joining = undefined;
+    }
+  }
+
+  private async doJoin(
+    zoneId: ZoneId,
+    identity: { displayName: string; spriteKey: string; fromZone?: string },
+    handlers: NetworkHandlers,
+  ): Promise<void> {
     this.handlers = handlers;
 
     // filterBy(['zoneId']) on the server means this lands everyone asking for
@@ -109,6 +126,13 @@ export class NetworkClient {
       spriteKey: identity.spriteKey,
       fromZone: identity.fromZone,
     });
+    // Walking out of the zone while the join was still in flight: the room
+    // exists now, so leave it immediately rather than staying silently joined
+    // to a zone the player is no longer in.
+    if (this.abandoned) {
+      void room.leave();
+      return;
+    }
     this.room = room;
 
     const $ = getStateCallbacks(room);
@@ -169,8 +193,16 @@ export class NetworkClient {
   }
 
   async leave(): Promise<void> {
+    this.abandoned = true;
+
+    // A join in flight has no room to leave yet; wait for it so doJoin() can
+    // see `abandoned` and drop the connection it just opened.
+    if (this.joining) {
+      await this.joining.catch(() => undefined);
+    }
+
     const room = this.room;
     this.room = undefined;
-    await room?.leave();
+    await room?.leave().catch(() => undefined);
   }
 }

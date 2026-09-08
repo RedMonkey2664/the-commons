@@ -69,6 +69,8 @@ export class FriendsPanel {
   private readonly scrim: Phaser.GameObjects.Rectangle;
 
   private open = false;
+  private closeTween?: Phaser.Tweens.Tween;
+  private panelHeight = 0;
   private entriesProvider: () => FriendEntry[] = () => [];
 
   constructor(private readonly scene: Phaser.Scene) {
@@ -126,6 +128,13 @@ export class FriendsPanel {
   show(): void {
     if (this.open) return;
     this.open = true;
+
+    // Cancel an in-flight close, or its onComplete hides the panel again a
+    // moment after it reopens — leaving it invisible but still modal, which
+    // soft-locks world input.
+    this.closeTween?.stop();
+    this.closeTween = undefined;
+
     this.render();
 
     const { width } = this.scene.scale.gameSize;
@@ -159,12 +168,15 @@ export class FriendsPanel {
       ease: UI.panel.slideEase,
       onComplete: () => this.scrim.setVisible(false),
     });
-    this.scene.tweens.add({
+    this.closeTween = this.scene.tweens.add({
       targets: this.container,
       x: width,
       duration: UI.panel.slideMs,
       ease: UI.panel.slideEase,
-      onComplete: () => this.container.setVisible(false),
+      onComplete: () => {
+        this.closeTween = undefined;
+        this.container.setVisible(false);
+      },
     });
   }
 
@@ -177,6 +189,7 @@ export class FriendsPanel {
     this.scrim.setSize(width, height);
 
     const panelHeight = Math.min(height - SPACING.hudMargin * 2, 620);
+    this.panelHeight = panelHeight;
     this.container.y = Math.round((height - panelHeight) / 2);
     this.container.x = this.open ? width - PANEL_WIDTH - SPACING.hudMargin : width;
 
@@ -205,7 +218,13 @@ export class FriendsPanel {
       .slice(0, 8)
       .map((p) => ({ displayName: p.displayName, online: false, zone: p.lastSeenZone }));
 
-    const entries = [...live, ...offline];
+    // Clip to what actually fits inside the frame. Without this a busy room
+    // draws rows straight through the panel and out over the world.
+    const available = Math.max(0, this.panelHeight - 56 - 40);
+    const maxRows = Math.max(1, Math.floor(available / ROW_HEIGHT));
+    const all = [...live, ...offline];
+    const overflow = Math.max(0, all.length - maxRows);
+    const entries = overflow > 0 ? all.slice(0, maxRows - 1) : all;
 
     if (entries.length === 0) {
       this.rows.add(
@@ -263,6 +282,20 @@ export class FriendsPanel {
       row.add([divider, dot, name, sub]);
       this.rows.add(row);
     });
+
+    if (overflow > 0) {
+      this.rows.add(
+        this.scene.add
+          .text(SPACING.dialogueBoxPadding + 26, entries.length * ROW_HEIGHT + 14,
+            `and ${overflow + 1} more`, {
+              fontFamily: TYPOGRAPHY.dialogueFont,
+              fontSize: `${TYPOGRAPHY.hudFontSize - 1}px`,
+              color: COLORS.dialogueBoxText,
+            })
+          .setOrigin(0, 0)
+          .setAlpha(0.55),
+      );
+    }
   }
 
   destroy(): void {

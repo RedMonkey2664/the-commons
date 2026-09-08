@@ -9,7 +9,10 @@
 import Phaser from 'phaser';
 import type { CharacterState, Direction, PlayerStatus, TileCoord } from '@commons/shared';
 import { SIT } from '@commons/shared';
-import { GridMovement } from '../systems/GridMovement';
+
+/** How far the sprite settles when seated. Paired with the 150ms cross-fade. */
+const SIT_OFFSET_Y = 7;
+import { GridMovement, tileToWorld } from '../systems/GridMovement';
 import { registerCharacterAnimations } from '../art/characterAnimations';
 import { ASSET_KEYS } from '../art/placeholderArt';
 
@@ -34,6 +37,9 @@ export class Player {
    * "Status flows from location + action, not manual toggles."
    */
   status: PlayerStatus = 'idle';
+
+  /** In-flight sit/stand pose tween, so the two can cancel each other. */
+  private poseTweenHandle?: Phaser.Tweens.Tween;
 
   constructor(private readonly scene: Phaser.Scene, options: PlayerOptions) {
     const textureKey = options.textureKey ?? ASSET_KEYS.playerSheet;
@@ -79,27 +85,32 @@ export class Player {
     if (this.isSitting) return;
     this.movement.setSitting(true);
     this.status = status;
-
-    this.scene.tweens.add({
-      targets: this.sprite,
-      y: this.sprite.y + 7,
-      scaleY: 0.88,
-      duration: SIT.crossFadeMs,
-      ease: 'Quad.easeOut',
-    });
+    // Absolute target from the tile, never a relative offset: two of these
+    // overlapping inside the 150ms cross-fade would otherwise stack their
+    // offsets and leave the sprite floating.
+    this.poseTween(tileToWorld(this.tile).y + SIT_OFFSET_Y, 0.88);
   }
 
   stand(): void {
     if (!this.isSitting) return;
     this.movement.setSitting(false);
     this.status = 'idle';
+    this.poseTween(tileToWorld(this.tile).y, 1);
+  }
 
-    this.scene.tweens.add({
+  private poseTween(y: number, scaleY: number): void {
+    this.poseTweenHandle?.stop();
+    this.poseTweenHandle = this.scene.tweens.add({
       targets: this.sprite,
-      y: this.sprite.y - 7,
-      scaleY: 1,
+      y,
+      scaleY,
       duration: SIT.crossFadeMs,
       ease: 'Quad.easeOut',
+      onUpdate: () => this.sprite.setDepth(this.sprite.y),
+      onComplete: () => {
+        this.poseTweenHandle = undefined;
+        this.sprite.setDepth(this.sprite.y);
+      },
     });
   }
 

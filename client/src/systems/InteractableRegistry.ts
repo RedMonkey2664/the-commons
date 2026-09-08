@@ -115,7 +115,14 @@ export const INTERACTABLE_HANDLERS: Partial<Record<InteractableKind, Interaction
     ctx.sit('idle');
   },
 
-  /** Library reading nook: sit near people without a formal timer (03). */
+  /**
+   * Library reading nook: sit near people without a formal timer (03).
+   *
+   * Uses a popup rather than a dialogue box on purpose. speak() drives
+   * setBlocked(true) then setBlocked(false) on close, and BLOCKED -> IDLE
+   * overwrites the SITTING state — which would leave the player stuck in the
+   * seated pose with no way to stand back up.
+   */
   reading_nook: (ctx) => {
     if (ctx.isSitting()) {
       ctx.stand();
@@ -123,7 +130,7 @@ export const INTERACTABLE_HANDLERS: Partial<Record<InteractableKind, Interaction
     }
     ctx.sit('idle');
     ctx.scene.time.delayedCall(SIT.statusIconDelayMs, () => {
-      speak(ctx, textOf(ctx.object, 'You settle in.'));
+      ui.popup?.show('You settle in', { iconColor: COLORS.statusListening });
     });
   },
 

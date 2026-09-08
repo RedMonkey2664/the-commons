@@ -20,7 +20,7 @@
  *   - disconnect removes the avatar
  */
 
-import { spawn } from 'node:child_process';
+import { execSync, spawn } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -31,6 +31,10 @@ const repoRoot = resolve(here, '..');
 const CLIENT_PORT = 5180;
 const URL = `http://localhost:${CLIENT_PORT}/`;
 const SCENE_KEY = 'TownSquareScene';
+const ZONE_KEYS = [
+  'TownSquareScene', 'LibraryScene', 'CafeScene',
+  'ArcadeScene', 'ParkScene', 'StudyRoomScene',
+];
 
 const headed = process.argv.includes('--headed');
 
@@ -53,6 +57,39 @@ function check(name, condition, detail = '') {
 
 const isWin = process.platform === 'win32';
 
+/**
+ * Free a TCP port before binding it.
+ *
+ * A previous run that was interrupted can leave a server holding 2567, and the
+ * only symptom is the next run's server exiting immediately — which looks like
+ * a broken harness rather than a stale process.
+ */
+function freePort(port) {
+  if (!isWin) return;
+  let out = '';
+  try {
+    out = execSync(`netstat -ano | findstr :${port}`, { encoding: 'utf8' });
+  } catch {
+    // findstr exits non-zero when nothing matches, which is the common case.
+    return;
+  }
+  const pids = new Set(
+    out
+      .split(/\r?\n/)
+      .filter((line) => line.includes('LISTENING'))
+      .map((line) => line.trim().split(/\s+/).pop())
+      .filter((pid) => pid && pid !== '0'),
+  );
+  for (const pid of pids) {
+    console.log(`  freeing port ${port} (stale pid ${pid})`);
+    try {
+      execSync(`taskkill /pid ${pid} /f /t`, { stdio: 'ignore' });
+    } catch {
+      /* already gone */
+    }
+  }
+}
+
 function spawnAndWait(command, args, cwd, readyPattern, label) {
   const child = spawn(isWin ? `${command}.cmd` : command, args, {
     cwd,
@@ -60,10 +97,14 @@ function spawnAndWait(command, args, cwd, readyPattern, label) {
     shell: isWin,
   });
 
+  // Kept so an early exit can report WHY, instead of just a status code.
+  const output = [];
+
   return new Promise((resolvePromise, rejectPromise) => {
     const timeout = setTimeout(() => rejectPromise(new Error(`${label} did not start in 90s`)), 90_000);
     const onData = (buffer) => {
       const text = buffer.toString();
+      output.push(text);
       if (readyPattern.test(text)) {
         clearTimeout(timeout);
         resolvePromise(child);
@@ -73,7 +114,8 @@ function spawnAndWait(command, args, cwd, readyPattern, label) {
     child.stderr.on('data', onData);
     child.on('exit', (code) => {
       clearTimeout(timeout);
-      rejectPromise(new Error(`${label} exited early with code ${code}`));
+      const tail = output.join('').trim().split(/\r?\n/).slice(-6).join(' | ');
+      rejectPromise(new Error(`${label} exited early with code ${code}: ${tail}`));
     });
   });
 }
@@ -119,17 +161,61 @@ async function openClient(browser, displayName) {
   return { page, context, errors, displayName };
 }
 
+/**
+ * Read whichever zone scene is live, not a fixed one — from Phase 2 the players
+ * can be standing in different buildings.
+ */
 async function netState(client) {
-  return client.page.evaluate((key) => {
-    const scene = window.__COMMONS__.game.scene.getScene(key);
+  return client.page.evaluate((keys) => {
+    const game = window.__COMMONS__.game;
+    const key = keys.find((k) => game.scene.isActive(k));
+    const scene = key ? game.scene.getScene(key) : null;
+    if (!scene?.player) return { scene: key ?? null, ready: false, remotes: [] };
     return {
+      scene: key,
+      ready: true,
       sessionId: scene.network?.sessionId ?? null,
       connected: Boolean(scene.network?.isConnected),
       tile: { ...scene.player.tile },
       facing: scene.player.facing,
+      sitting: scene.player.isSitting,
+      status: scene.player.status,
       remotes: scene.multiplayer ? scene.multiplayer.remoteSnapshot : [],
     };
-  }, SCENE_KEY);
+  }, ZONE_KEYS);
+}
+
+/** Ask the live zone scene to transition, then wait for the new one. */
+async function enterZone(client, zoneId, sceneKey) {
+  await client.page.evaluate(
+    ({ keys, zoneId }) => {
+      const game = window.__COMMONS__.game;
+      const key = keys.find((k) => game.scene.isActive(k));
+      game.scene.getScene(key).transitionTo(zoneId);
+    },
+    { keys: ZONE_KEYS, zoneId },
+  );
+  await waitForZone(client, sceneKey);
+}
+
+async function waitForZone(client, sceneKey, timeout = 20_000) {
+  await client.page.waitForFunction(
+    (k) => {
+      const game = window.__COMMONS__?.game;
+      return Boolean(game?.scene?.isActive(k) && game.scene.getScene(k)?.player);
+    },
+    sceneKey,
+    { timeout },
+  );
+  await client.page.waitForTimeout(600);
+}
+
+/** Press Space long enough to span frames (Phaser drops sub-frame presses). */
+async function tapSpace(client) {
+  await client.page.keyboard.down('Space');
+  await client.page.waitForTimeout(90);
+  await client.page.keyboard.up('Space');
+  await client.page.waitForTimeout(200);
 }
 
 async function holdKey(client, key, ms) {
@@ -163,6 +249,7 @@ let browser;
 
 try {
   console.log('starting game server...');
+  freePort(2567);
   server = await spawnAndWait('npx', ['tsx', 'src/index.ts'], resolve(repoRoot, 'server'), /listening on ws:/, 'server');
 
   console.log('starting dev client...');
@@ -256,6 +343,67 @@ try {
   mkdirSync(shotDir, { recursive: true });
   await alpha.page.screenshot({ path: resolve(shotDir, 'phase1_client_a.png') });
   await beta.page.screenshot({ path: resolve(shotDir, 'phase1_client_b.png') });
+
+  // --- zone transitions with two clients ----------------------------------
+  // Both players walk into the Library. Each transition is a room LEAVE and a
+  // room JOIN, so this is where presence most easily breaks: a player who
+  // stays joined to the room they walked out of, or never appears in the new
+  // one, looks completely normal on their own screen.
+  console.log('\nmultiplayer zone transitions');
+
+  // Driven through the scene's own transition rather than by walking onto the
+  // door tile. A local teleport to the door would desync this client from the
+  // server, and the resulting correction cancels the step tween mid-move — so
+  // onArrive never fires and the door never triggers. The door-step path itself
+  // is covered single-player in tools/phase2_world.mjs; what matters here is
+  // the room LEAVE and JOIN either side of it.
+  await enterZone(alpha, 'library', 'LibraryScene');
+  a = await netState(alpha);
+  check('A moved to the Library', a.scene === 'LibraryScene', `${a.scene}`);
+
+  b = await waitFor(() => netState(beta), (s) => s.remotes.length === 0, 6000);
+  check('B no longer sees A in the square', b.remotes.length === 0, `still ${b.remotes.length}`);
+
+  await enterZone(beta, 'library', 'LibraryScene');
+  b = await netState(beta);
+  check('B followed A into the Library', b.scene === 'LibraryScene', `${b.scene}`);
+
+  b = await waitFor(() => netState(beta), (s) => s.remotes.length === 1, 8000);
+  a = await waitFor(() => netState(alpha), (s) => s.remotes.length === 1, 8000);
+  check('they find each other in the Library room', b.remotes.length === 1 && a.remotes.length === 1,
+    `A sees ${a.remotes.length}, B sees ${b.remotes.length}`);
+
+  // --- status propagation -------------------------------------------------
+  // 11: status flows from location and action. The other client is the only
+  // place that can prove it actually left this machine.
+  console.log('\nstatus sync');
+
+  // Driven through the multiplayer system rather than by walking to a pod and
+  // sitting. Placing A on a pod tile means teleporting it locally, which
+  // desyncs from the server; the correction that follows calls teleport(),
+  // which resets SITTING back to IDLE and stands the player straight back up.
+  //
+  // The sit -> status binding is covered single-player in phase2_world.mjs
+  // ("status becomes studying, with no toggle"). What can only be proved with
+  // two clients is the half after it: that the status actually leaves this
+  // machine and lands on the other one.
+  await alpha.page.evaluate((keys) => {
+    const game = window.__COMMONS__.game;
+    const key = keys.find((k) => game.scene.isActive(k));
+    game.scene.getScene(key).multiplayer.pushStatus('studying');
+  }, ZONE_KEYS);
+
+  b = await waitFor(() => netState(beta), (s) => s.remotes[0]?.status === 'studying', 6000);
+  check("B sees A's status as studying", b.remotes[0]?.status === 'studying', b.remotes[0]?.status);
+
+  await alpha.page.evaluate((keys) => {
+    const game = window.__COMMONS__.game;
+    const key = keys.find((k) => game.scene.isActive(k));
+    game.scene.getScene(key).multiplayer.pushStatus('idle');
+  }, ZONE_KEYS);
+
+  b = await waitFor(() => netState(beta), (s) => s.remotes[0]?.status === 'idle', 6000);
+  check('B sees A go back to idle', b.remotes[0]?.status === 'idle', b.remotes[0]?.status);
 
   // --- disconnect ---------------------------------------------------------
   console.log('\ndisconnect');

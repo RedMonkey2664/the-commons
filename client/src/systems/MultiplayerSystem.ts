@@ -49,6 +49,16 @@ export class MultiplayerSystem {
   /** Suppresses the join popup for players already present when we arrived. */
   private initialSyncDone = false;
 
+  /**
+   * Last status actually SENT.
+   *
+   * Deliberately not read back off the player: Player.sit() sets its own status
+   * before this is called, so a guard comparing against the player would always
+   * see them as equal and never send anything. Tracking what went over the wire
+   * is the only thing that answers "does the server already know?".
+   */
+  private lastSentStatus: PlayerStatus = 'idle';
+
   constructor(options: MultiplayerSystemOptions) {
     this.scene = options.scene;
     this.network = options.network;
@@ -68,12 +78,21 @@ export class MultiplayerSystem {
   }
 
   /** Exposed for the sync test harness. */
-  get remoteSnapshot(): Array<{ id: string; x: number; y: number; facing: string }> {
+  get remoteSnapshot(): Array<{
+    id: string;
+    x: number;
+    y: number;
+    facing: string;
+    status: string;
+    displayName: string;
+  }> {
     return [...this.remotes.values()].map((r) => ({
       id: r.id,
       x: r.tile.x,
       y: r.tile.y,
       facing: r.facing,
+      status: r.status,
+      displayName: r.displayName,
     }));
   }
 
@@ -168,7 +187,8 @@ export class MultiplayerSystem {
   }
 
   pushStatus(status: PlayerStatus): void {
-    if (this.player.status === status) return;
+    if (this.lastSentStatus === status) return;
+    this.lastSentStatus = status;
     this.player.status = status;
     this.network.sendStatus(status);
   }

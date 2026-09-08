@@ -9,24 +9,29 @@ The point is **presence, not progression** — see
 
 ---
 
-## Status: Phase 1 complete
+## Status: Phase 2 complete
 
 | Phase | Scope | State |
 |---|---|---|
 | **0** | Single-player skeleton: Town Square, WASD grid movement, collision, camera | **Done** — 23/23 smoke checks |
-| **1** | Colyseus server, multiplayer sync in Town Square | **Done** — 20/20 sync checks |
-| 2 | All zones + zone transitions + NPC dialogue + friends list | Not started |
+| **1** | Colyseus server, multiplayer sync in Town Square | **Done** — 26/26 sync checks |
+| **2** | All zones + zone transitions + NPC dialogue + friends list | **Done** — 42/42 world checks |
 | 3 | Supabase auth, persistence, arcade minigames, text chat | Not started |
 | 4 | Jukebox + voice chat | Not started |
 | 5 | Real pixel art, remaining minigames, polish | Not started |
 
-**Playable right now:** type a name, spawn in Town Square, and walk it with
-grid-based WASD movement — tile collision, bump feedback, turn-in-place, smooth
-camera follow, Space to read signposts and talk to an NPC through a
-Pokemon-style dialogue box, "!" interact bubbles, swaying ambient grass. Open a
-second browser and you see each other live, with nameplates, moving at the same
-130ms-per-tile cadence. The four zone doors are placed and reachable; walking
-into one says the zone isn't open yet.
+**Playable right now:** type a name and walk the whole town. Six zones —
+Town Square, Library, Cafe, Arcade, Park and Study Rooms — all connected by
+doors you walk onto, with a fade transition and an arrival point that puts you
+back at the door you came out of. Grid-based WASD movement with tile collision,
+bump feedback and turn-in-place. Space reads signposts and talks to NPCs through
+a dialogue box; "!" bubbles mark anything interactable. Sit at a library focus
+pod and your status becomes `studying` — no start button, just sitting down.
+Esc opens the friends panel showing who is in the room with you.
+
+Open a second browser and you see each other live, with nameplates, moving at
+the same 130ms-per-tile cadence, walking between zones, and each other's status
+updating as you sit and stand.
 
 If the server is down the town still works — you just play it alone.
 
@@ -62,6 +67,7 @@ node tools/verify_maps.mjs  # validate every map: spawn, reachability, door targ
 python tools/generate_placeholder_maps.py   # regenerate placeholder Tiled maps
 node tools/phase0_smoke.mjs  # single-player smoke test (no server needed)
 node tools/phase1_sync.mjs   # two-client multiplayer sync test (boots server + client)
+node tools/phase2_world.mjs   # walks every zone door and back (single-player)
 node tools/capture_screens.mjs # screenshot the loading, title and world screens
 ```
 
@@ -75,7 +81,7 @@ Both need `npx playwright install chromium` once. Add `--headed` to watch.
 |---|---|
 | `W` `A` `S` `D` (or arrows) | Move one tile |
 | `Space` (or `Enter`) | Interact / advance dialogue |
-| `Esc` | Menu (Phase 2) |
+| `Esc` | Friends panel |
 
 Tap a direction you aren't facing to **turn in place**; hold it to walk.
 Holding a direction chains tiles continuously.
@@ -90,7 +96,8 @@ client/          Phaser 3 + TypeScript game
   src/entities/    Player, RemotePlayer
   src/systems/     GridMovement, ZoneMap, Interaction*, InputController,
                    AmbientAnimator, NetworkClient, MultiplayerSystem
-  src/scenes/      BootScene, TitleScene, ZoneScene (base), TownSquareScene
+  src/scenes/      BootScene, TitleScene, ZoneScene (base), TownSquareScene,
+                   zones.ts (Library/Cafe/Arcade/Park/StudyRoom)
   src/ui/          UIScene, DialogueBox, ItemPopup, Hud
 server/          Colyseus game server
   src/rooms/       ZoneRoom — one generic, config-driven room type for every zone
@@ -180,6 +187,12 @@ correcting snap once the server has caught up with everything it sent.
 **Remote players** tween at the same 130ms per tile as the local player so
 everyone moves at one visual cadence, and snap instead of racing if an update is
 missed by more than a tile (per 10).
+
+**Zone transitions** are a room leave and a room join. The Colyseus room is left
+*during* the 250ms fade rather than after it, so the network round-trip is
+hidden by the transition instead of showing up as a hitch on the far side. The
+arrival tile is resolved server-side from `JoinOptions.fromZone` — the server
+owns position, so a client-chosen arrival point would just be overruled.
 
 Players do **not** block each other — see the open question below.
 

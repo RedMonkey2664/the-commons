@@ -123,16 +123,19 @@ export abstract class ZoneScene extends Phaser.Scene {
 
     this.ensureUi();
 
-    // The panel asks the scene for the roster rather than being pushed updates,
-    // so it always reflects the room as of the moment it is opened.
-    ui.friends?.setEntriesProvider(() =>
-      (this.multiplayer?.roster ?? []).map((person) => ({
-        displayName: person.displayName,
-        online: true,
-        zone: this.zone.displayName,
-        status: person.status,
-      })),
-    );
+    // Deferred for the same reason the HUD calls below are: on the very first
+    // boot UIScene has been launched but has not run create() yet, so the panel
+    // does not exist to be configured.
+    this.time.delayedCall(0, () => {
+      ui.friends?.setEntriesProvider(() =>
+        (this.multiplayer?.roster ?? []).map((person) => ({
+          displayName: person.displayName,
+          online: true,
+          zone: this.zone.displayName,
+          status: person.status,
+        })),
+      );
+    });
 
     // Arriving half of the zone transition (10): fade in at the new spawn.
     this.cameras.main.fadeIn(ZONE_TRANSITION.fadeInMs, 0, 0, 0);
@@ -160,11 +163,20 @@ export abstract class ZoneScene extends Phaser.Scene {
       return;
     }
 
-    if (this.controls.justPressed('menu')) ui.friends?.toggle();
+    if (this.controls.justPressed('menu')) {
+      ui.friends?.toggle();
+      // Phaser latches just-pressed until it is read. Without draining here, a
+      // Space pressed while the panel was open fires an interaction on the
+      // frame the panel closes.
+      this.controls.reset();
+    }
 
     // The friends panel is a modal overlay; the world keeps rendering but stops
     // taking input, so nobody walks off while reading who is online.
-    if (ui.friends?.isOpen) return;
+    if (ui.friends?.isOpen) {
+      this.controls.reset();
+      return;
+    }
 
     this.player.update(time, this.controls.heldDirection());
 
