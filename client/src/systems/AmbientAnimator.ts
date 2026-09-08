@@ -9,7 +9,7 @@
  */
 
 import Phaser from 'phaser';
-import { AMBIENT, SPACING } from '@commons/shared';
+import { AMBIENT, COLORS, SPACING, hex } from '@commons/shared';
 import { ASSET_KEYS } from '../art/placeholderArt';
 import type { AmbientTile, ZoneMap } from './ZoneMap';
 
@@ -21,6 +21,47 @@ const MAX_ANIMATED = 140;
 type AmbientBuilder = (scene: Phaser.Scene, entry: AmbientTile, index: number) => Phaser.GameObjects.GameObject;
 
 const BUILDERS: Record<string, AmbientBuilder> = {
+  /**
+   * Festoon bulbs on the terrace: a slow, shallow brightness drift, offset per
+   * tile so the run never pulses in unison. Deliberately gentler than
+   * windowFlicker — these are meant to be warm, not faulty.
+   */
+  /**
+   * Festoon bulbs on the terrace: a slow, shallow brightness drift, offset per
+   * tile so the run never pulses in unison. Deliberately gentler than
+   * windowFlicker — these are meant to read as warm, not faulty.
+   *
+   * The tile image is re-added explicitly because the constructor REMOVES the
+   * static tile before calling a builder, on the understanding that the builder
+   * replaces it. Returning only the glow left a tile-shaped hole in the deck
+   * showing the zone's background colour through it.
+   */
+  stringGlow: (scene, entry, index) => {
+    const x = entry.tile.x * TILE + TILE / 2;
+    const y = entry.tile.y * TILE + TILE;
+
+    const sprite = scene.add.image(x, y, ASSET_KEYS.tileset, entry.frame).setOrigin(0.5, 1).setDepth(-99);
+
+    const glow = scene.add
+      .circle(x, y - TILE / 2, 11, hex(COLORS.lampGlow), 0.14)
+      .setDepth(-98)
+      .setBlendMode(Phaser.BlendModes.ADD);
+
+    scene.tweens.add({
+      targets: glow,
+      alpha: 0.3,
+      scale: 1.15,
+      duration: 2200,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut',
+      delay: (index % 5) * 440,
+    });
+
+    // One object is returned for destruction, so the glow rides with the tile.
+    return scene.add.container(0, 0, [sprite, glow]).setDepth(-99);
+  },
+
   /**
    * A slow horizontal squash anchored at the base of the tile, so planting
    * bends rather than slides. ~1.5s cycle per 10's table.

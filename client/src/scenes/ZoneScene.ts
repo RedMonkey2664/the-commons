@@ -27,7 +27,12 @@ import {
   getCosmetic,
   resolveEntryPoint,
 } from '@commons/shared';
-import { ASSET_KEYS, ensureOutfitSheet, generateAllPlaceholderArt } from '../art/placeholderArt';
+import {
+  ASSET_KEYS,
+  drinkTextureKey,
+  ensureOutfitSheet,
+  generateAllPlaceholderArt,
+} from '../art/placeholderArt';
 import { registerCharacterAnimations } from '../art/characterAnimations';
 import { Player } from '../entities/Player';
 import { AmbientAnimator } from '../systems/AmbientAnimator';
@@ -72,6 +77,16 @@ export abstract class ZoneScene extends Phaser.Scene {
   protected multiplayer?: MultiplayerSystem;
   /** Only created in zones that have a jukebox. */
   protected jukeboxAudio?: JukeboxPlayer;
+
+  /**
+   * The drink this player is carrying (03), and its icon.
+   *
+   * Deliberately NOT persisted in session storage the way cosmetics are: a
+   * drink is something you are holding in a room, not a saved preference, and
+   * it should not follow you into tomorrow's session.
+   */
+  private drink = '';
+  private drinkIcon?: Phaser.GameObjects.Image;
   protected voice?: VoiceClient;
 
   private sceneData: ZoneSceneData = {};
@@ -160,6 +175,16 @@ export abstract class ZoneScene extends Phaser.Scene {
         this.multiplayer?.pushStatus('idle');
       },
       launchMinigame: (sceneKey) => this.launchMinigame(sceneKey),
+      openDrinks: () => {
+        ui.drinks?.setState(this.drink, (drink) => {
+          this.drink = drink ? drink.id : '';
+          this.multiplayer?.pushDrink(this.drink);
+          this.applyLocalDrink();
+          if (drink) ui.popup?.show(drink.line, { iconColor: drink.color });
+        });
+        ui.drinks?.show();
+        this.player.setBlocked(true);
+      },
       openJukebox: () => {
         if (!this.jukeboxAudio) return false;
         // Browsers block audio until a gesture; interacting with the jukebox
@@ -258,8 +283,8 @@ export abstract class ZoneScene extends Phaser.Scene {
       return;
     }
 
-    // The composer and the jukebox panel each own the keyboard while open.
-    if (ui.chat?.isComposing || ui.jukebox?.isOpen) {
+    // The composer and the modal panels each own the keyboard while open.
+    if (ui.chat?.isComposing || ui.jukebox?.isOpen || ui.drinks?.isOpen) {
       this.controls.reset();
       return;
     }
@@ -280,6 +305,14 @@ export abstract class ZoneScene extends Phaser.Scene {
     }
 
     this.player.update(time, this.controls.heldDirection());
+
+    // The mug rides along with the player. Positioned here rather than parented
+    // to the sprite so it keeps the depth sorting the rest of the world uses.
+    if (this.drinkIcon) {
+      this.drinkIcon
+        .setPosition(this.player.sprite.x - 15, this.player.sprite.y - 30)
+        .setDepth(this.player.sprite.y + 401);
+    }
 
     if (this.controls.justPressed('interact')) {
       this.interactions.tryInteract(this.player.tile, this.player.facing);
@@ -465,6 +498,13 @@ export abstract class ZoneScene extends Phaser.Scene {
 
       // Enter opens the composer, but not on top of a dialogue box or panel —
       // those already own the keyboard.
+      if (ui.drinks?.isOpen) {
+        ui.drinks.handleKey(event);
+        if (!ui.drinks.isOpen) this.player?.setBlocked(false);
+        this.controls.reset();
+        return;
+      }
+
       // The jukebox panel is modal while open.
       if (ui.jukebox?.isOpen) {
         const wasOpen = ui.jukebox.isOpen;
@@ -563,6 +603,29 @@ export abstract class ZoneScene extends Phaser.Scene {
       outfit?.color ?? COLORS.playerBody,
       hat?.style ? { color: hat.color, style: hat.style } : undefined,
     );
+  }
+
+  /**
+   * Draw (or clear) the mug over the local player.
+   *
+   * The local player has no nameplate, so this is the only feedback that the
+   * order actually happened for the person who placed it.
+   */
+  private applyLocalDrink(): void {
+    if (!this.drink) {
+      this.drinkIcon?.destroy();
+      this.drinkIcon = undefined;
+      return;
+    }
+
+    const key = drinkTextureKey(this.drink);
+    if (!this.textures.exists(key)) return;
+
+    if (!this.drinkIcon) {
+      this.drinkIcon = this.add.image(0, 0, key).setOrigin(0.5, 1);
+    } else {
+      this.drinkIcon.setTexture(key);
+    }
   }
 
   /** Hook for zone-specific setup (Pomodoro pods, jukebox, cabinets). */

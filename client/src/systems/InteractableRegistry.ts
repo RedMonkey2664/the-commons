@@ -27,6 +27,8 @@ export interface InteractionContext {
   launchMinigame: (sceneKey: string) => void;
   /** Open the shared jukebox queue. False when this zone has no jukebox. */
   openJukebox: () => boolean;
+  /** Open the cafe drink picker (03). */
+  openDrinks: () => void;
   /** Walk out of this zone into another. Owned by ZoneScene (fade + room swap). */
   transitionTo: (zoneId: ZoneId) => void;
   isSitting: () => boolean;
@@ -148,6 +150,17 @@ export const INTERACTABLE_HANDLERS: Partial<Record<InteractableKind, Interaction
     if (!ctx.openJukebox()) {
       speak(ctx, `${textOf(ctx.object, 'A jukebox.')}|It is not connected to anything right now.`);
     }
+  },
+
+  /**
+   * The cafe counter (03).
+   *
+   * Cosmetic only, by design: ordering changes an icon over your head and
+   * nothing else. No cost, no stat, no unlock — a third place is made of small
+   * optional gestures, and the value is that other people can see you made one.
+   */
+  drink_counter: (ctx) => {
+    ctx.openDrinks();
   },
 
   /**

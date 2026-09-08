@@ -17,6 +17,7 @@
 
 import Phaser from 'phaser';
 import type { HatStyle } from '@commons/shared';
+import { DRINKS } from '@commons/shared';
 import { COLORS, SPACING, mix } from '@commons/shared';
 
 const T = SPACING.tile; // 32
@@ -112,10 +113,19 @@ export const TILE_INDEX = {
   rug: 53,
   chalkboard: 54,
   kitchenTile: 55,
+  // row 7 - rooftop terrace & greenhouse (Phase 6)
+  roofDeck: 56,
+  roofRail: 57,
+  skyline: 58,
+  stringLight: 59,
+  glassWall: 60,
+  soilBed: 61,
+  fern: 62,
+  gardenPath: 63,
 } as const;
 
 export const TILESET_COLUMNS = 8;
-export const TILESET_ROWS = 7;
+export const TILESET_ROWS = 8;
 export const TILE_COUNT = TILESET_COLUMNS * TILESET_ROWS;
 
 /** Character sheet layout: 4 directions x 4 frames, 32x64 each. */
@@ -698,18 +708,46 @@ set(TILE_INDEX.bollard, (ctx, ox, oy) => {
 // ---- row 4: interior floors ----------------------------------------------
 
 /** Plank flooring with a running bond, used across the Library and Study Rooms. */
+/**
+ * Floorboards.
+ *
+ * Rewritten in Phase 6. The first version drew a dark seam AND a bright
+ * highlight across every 8px band plus a butt joint in the middle of each, so
+ * at a glance every interior floor read as brickwork rather than boards. Boards
+ * read as boards when the long axis is unbroken: the run-joints are now rare
+ * and faint, the cross-seams are soft, and each board gets its own slight tone
+ * so the eye follows the length of the plank instead of the grid.
+ */
 function drawPlanks(ctx: Ctx, ox: number, oy: number, base: string, offset: number) {
-  vGradient(ctx, ox, oy, mix(base, '#FFFFFF', 0.12), base);
-  grain(ctx, ox, oy, mix(base, '#000000', 0.3), 137, 26, 0.2);
+  const rng = makeRng(offset * 17 + 3);
   for (let i = 0; i < 4; i += 1) {
     const y = oy + i * 8;
-    rect(ctx, ox, y, T, 1, mix(base, '#000000', 0.35));
-    ctx.globalAlpha = 0.35;
-    rect(ctx, ox, y + 1, T, 1, mix(base, '#FFFFFF', 0.45));
+    // per-board tone, which is most of what sells a real floor
+    const tone = mix(base, i % 2 === 0 ? '#FFFFFF' : '#000000', 0.05 + rng() * 0.05);
+    rect(ctx, ox, y, T, 8, tone);
+
+    // grain along the board, never across it
+    ctx.globalAlpha = 0.14;
+    for (let g = 0; g < 3; g += 1) {
+      const gy = y + 2 + Math.floor(rng() * 5);
+      const gx = ox + Math.floor(rng() * 10);
+      rect(ctx, gx, gy, 8 + Math.floor(rng() * 14), 1, mix(base, '#000000', 0.55));
+    }
     ctx.globalAlpha = 1;
-    // staggered butt joint
-    const jx = (i % 2 === 0 ? offset : offset + 16) % T;
-    rect(ctx, ox + jx, y, 1, 8, mix(base, '#000000', 0.3));
+
+    // the seam between boards: one soft dark line, no bright counter-line
+    ctx.globalAlpha = 0.5;
+    rect(ctx, ox, y, T, 1, mix(base, '#000000', 0.3));
+    ctx.globalAlpha = 1;
+  }
+
+  // A butt joint on ONE board per tile at most, so joints look scattered
+  // through the room rather than ruled into every course.
+  if (offset % 3 !== 0) {
+    const jr = Math.floor(rng() * 4);
+    ctx.globalAlpha = 0.45;
+    rect(ctx, ox + (offset * 7) % (T - 2) + 1, oy + jr * 8 + 1, 1, 7, mix(base, '#000000', 0.4));
+    ctx.globalAlpha = 1;
   }
 }
 
@@ -718,48 +756,66 @@ set(TILE_INDEX.woodFloor, (ctx, ox, oy) =>
 set(TILE_INDEX.woodFloorDark, (ctx, ox, oy) =>
   drawPlanks(ctx, ox, oy, mix(COLORS.benchWood, '#000000', 0.28), 18));
 
+/**
+ * Reading-room carpet.
+ *
+ * Was a desaturated version of the "listening" status blue, which across a
+ * whole reading room read as standing water. Libraries carpet in warm reds and
+ * greens for a reason — it is the one surface in the room meant to say "stop
+ * walking, sit down".
+ */
 set(TILE_INDEX.carpet, (ctx, ox, oy) => {
-  const base = mix(COLORS.statusListening, '#000000', 0.25);
-  vGradient(ctx, ox, oy, mix(base, '#FFFFFF', 0.12), base);
+  const base = COLORS.carpet;
+  vGradient(ctx, ox, oy, mix(base, '#FFFFFF', 0.1), base);
+
+  // woven pile: short strokes in both directions, low contrast so it reads as
+  // texture at a distance rather than noise
   const rng = makeRng(151);
-  ctx.globalAlpha = 0.16;
-  for (let i = 0; i < 70; i += 1) {
+  for (let i = 0; i < 90; i += 1) {
+    ctx.globalAlpha = 0.05 + rng() * 0.09;
     ctx.fillStyle = rng() > 0.5 ? '#FFFFFF' : '#000000';
-    ctx.fillRect(ox + Math.floor(rng() * T), oy + Math.floor(rng() * T), 2, 1);
+    const x = ox + Math.floor(rng() * T);
+    const y = oy + Math.floor(rng() * T);
+    if (rng() > 0.5) ctx.fillRect(x, y, 2, 1);
+    else ctx.fillRect(x, y, 1, 2);
   }
   ctx.globalAlpha = 1;
 });
 
-function drawCheckerTile(ctx: Ctx, ox: number, oy: number, a: string, b: string) {
-  vGradient(ctx, ox, oy, mix(a, '#FFFFFF', 0.15), a);
-  ctx.fillStyle = b;
-  ctx.fillRect(ox, oy, 16, 16);
-  ctx.fillRect(ox + 16, oy + 16, 16, 16);
-  ctx.globalAlpha = 0.35;
-  rect(ctx, ox, oy, T, 1, mix(a, '#FFFFFF', 0.5));
-  rect(ctx, ox, oy + 16, T, 1, mix(a, '#000000', 0.25));
-  rect(ctx, ox, oy, 1, T, mix(a, '#000000', 0.2));
-  rect(ctx, ox + 16, oy, 1, T, mix(a, '#000000', 0.2));
-  ctx.globalAlpha = 1;
-  // gloss sweep
-  ctx.globalAlpha = 0.12;
-  ctx.fillStyle = '#FFFFFF';
-  ctx.beginPath();
-  ctx.moveTo(ox, oy + T);
-  ctx.lineTo(ox + T, oy);
-  ctx.lineTo(ox + T, oy + 8);
-  ctx.lineTo(ox + 8, oy + T);
-  ctx.closePath();
-  ctx.fill();
-  ctx.globalAlpha = 1;
-}
 
 // Low-contrast checker. A strong two-tone chequerboard at this tile size
 // vibrates across a whole floor and fights everything standing on it.
+/**
+ * Cafe flooring.
+ *
+ * Both of these were high-contrast checkerboards. One checked tile is charming;
+ * a whole room of them is a public toilet, and it fought with everything placed
+ * on top. Terrazzo instead: a warm ground with fine aggregate and a quiet grout
+ * line, which is what the modern-city art direction actually wants.
+ */
+function drawTerrazzo(ctx: Ctx, ox: number, oy: number, base: string, fleck: string, seed: number) {
+  vGradient(ctx, ox, oy, mix(base, '#FFFFFF', 0.08), base);
+
+  const rng = makeRng(seed);
+  for (let i = 0; i < 34; i += 1) {
+    ctx.globalAlpha = 0.16 + rng() * 0.22;
+    ctx.fillStyle = rng() > 0.45 ? fleck : mix(base, '#000000', 0.35);
+    const w = 1 + Math.floor(rng() * 3);
+    ctx.fillRect(ox + Math.floor(rng() * T), oy + Math.floor(rng() * T), w, 1 + Math.floor(rng() * 2));
+  }
+  ctx.globalAlpha = 1;
+
+  // grout only on two edges, so a field of them reads as large-format slabs
+  ctx.globalAlpha = 0.16;
+  rect(ctx, ox, oy, T, 1, mix(base, '#000000', 0.45));
+  rect(ctx, ox, oy, 1, T, mix(base, '#000000', 0.45));
+  ctx.globalAlpha = 1;
+}
+
 set(TILE_INDEX.tileFloor, (ctx, ox, oy) =>
-  drawCheckerTile(ctx, ox, oy, COLORS.dialogueBoxBg, mix(COLORS.cafeBg, '#FFFFFF', 0.72)));
+  drawTerrazzo(ctx, ox, oy, COLORS.terrazzo, COLORS.terrazzoFleck, 211));
 set(TILE_INDEX.tileFloorAlt, (ctx, ox, oy) =>
-  drawCheckerTile(ctx, ox, oy, mix(COLORS.cafeBg, '#FFFFFF', 0.5), mix(COLORS.benchWood, '#FFFFFF', 0.35)));
+  drawTerrazzo(ctx, ox, oy, COLORS.terrazzoWarm, COLORS.terrazzoFleck, 233));
 
 set(TILE_INDEX.arcadeFloor, (ctx, ox, oy) => {
   const base = mix(COLORS.arcadeBg, '#000000', 0.55);
@@ -967,19 +1023,33 @@ set(TILE_INDEX.fence, (ctx, ox, oy) => {
   rect(ctx, ox + 4, oy + 6, 1, 22, mix(wood, '#FFFFFF', 0.3));
 });
 
+/**
+ * Patterned rug.
+ *
+ * The old one drew a border on EVERY tile, so a rug more than one tile across
+ * became a grid of small brown boxes — which is what a multi-tile rug looked
+ * like in the library: a stack of crates. This version is a continuous field
+ * pattern with no per-tile frame, so tiling it reads as one large rug.
+ */
 set(TILE_INDEX.rug, (ctx, ox, oy) => {
-  // Muted well below the accent colour: at full saturation a rug tile reads as
-  // a crate sitting on the floor rather than something woven into it.
-  const base = mix(COLORS.interactBubbleMark, '#5A4638', 0.55);
-  vGradient(ctx, ox, oy, mix(base, '#FFFFFF', 0.15), base);
-  ctx.globalAlpha = 0.5;
-  rect(ctx, ox + 3, oy + 3, T - 6, 1, COLORS.flowerYellow);
-  rect(ctx, ox + 3, oy + T - 4, T - 6, 1, COLORS.flowerYellow);
-  rect(ctx, ox + 3, oy + 3, 1, T - 6, COLORS.flowerYellow);
-  rect(ctx, ox + T - 4, oy + 3, 1, T - 6, COLORS.flowerYellow);
-  ctx.globalAlpha = 0.25;
-  for (let i = 0; i < 4; i += 1) rect(ctx, ox + 7 + i * 5, oy + 8, 2, T - 16, COLORS.flowerYellow);
+  const base = COLORS.rugBase;
+  vGradient(ctx, ox, oy, mix(base, '#FFFFFF', 0.1), base);
+
+  // diamond lattice, aligned to the tile grid so neighbours line up
+  ctx.globalAlpha = 0.3;
+  ctx.strokeStyle = COLORS.rugPattern;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(ox, oy + 16);
+  ctx.lineTo(ox + 16, oy);
+  ctx.lineTo(ox + T, oy + 16);
+  ctx.lineTo(ox + 16, oy + T);
+  ctx.closePath();
+  ctx.stroke();
   ctx.globalAlpha = 1;
+
+  rect(ctx, ox + 15, oy + 15, 2, 2, COLORS.rugPattern);
+  grain(ctx, ox, oy, mix(base, '#000000', 0.4), 61, 22, 0.13);
 });
 
 set(TILE_INDEX.chalkboard, (ctx, ox, oy) => {
@@ -1012,7 +1082,248 @@ set(TILE_INDEX.kitchenTile, (ctx, ox, oy) => {
   ctx.globalAlpha = 1;
 });
 
-/** Draws the whole tileset into one texture, 8 columns x 7 rows. */
+
+// ---- row 7: rooftop terrace & greenhouse (Phase 6) ------------------------
+
+/** Composite decking. Warmer and narrower than the park's boardwalk. */
+set(TILE_INDEX.roofDeck, (ctx, ox, oy) => {
+  vGradient(ctx, ox, oy, mix(COLORS.decking, '#FFFFFF', 0.16), COLORS.decking);
+  for (let i = 0; i < 4; i += 1) {
+    const y = oy + i * 8;
+    rect(ctx, ox, y, T, 1, mix(COLORS.decking, '#000000', 0.3));
+    rect(ctx, ox, y + 1, T, 1, mix(COLORS.decking, '#FFFFFF', 0.22));
+  }
+  grain(ctx, ox, oy, mix(COLORS.decking, '#000000', 0.35), 71, 14, 0.16);
+});
+
+/**
+ * Glass balustrade. Blocking, but drawn low and mostly transparent so it reads
+ * as an edge you cannot cross rather than a wall that hides the view.
+ */
+set(TILE_INDEX.roofRail, (ctx, ox, oy) => {
+  vGradient(ctx, ox, oy, mix(COLORS.decking, '#FFFFFF', 0.16), COLORS.decking);
+  ctx.globalAlpha = 0.5;
+  rect(ctx, ox, oy + 8, T, 18, COLORS.railGlass);
+  ctx.globalAlpha = 1;
+  rect(ctx, ox, oy + 7, T, 2, COLORS.steel);
+  rect(ctx, ox, oy + 7, T, 1, mix(COLORS.steel, '#FFFFFF', 0.45));
+  rect(ctx, ox, oy + 25, T, 2, mix(COLORS.steel, '#000000', 0.25));
+  for (const px of [ox + 2, ox + T - 4]) {
+    rect(ctx, px, oy + 8, 2, 18, COLORS.steel);
+  }
+  ctx.globalAlpha = 0.35;
+  rect(ctx, ox + 4, oy + 10, T - 10, 2, '#FFFFFF');
+  ctx.globalAlpha = 1;
+});
+
+/** The city at dusk, seen past the rail. Decorative and blocking. */
+set(TILE_INDEX.skyline, (ctx, ox, oy) => {
+  vGradient(ctx, ox, oy, COLORS.duskSkyTop, COLORS.duskSkyLow);
+
+  const rng = makeRng(ox * 31 + 5);
+  // Far towers first, then near ones, so the city has depth rather than
+  // being one flat silhouette.
+  for (const [color, minTop, maxTop, width] of [
+    [COLORS.skylineFar, 6, 16, 7],
+    [COLORS.skylineNear, 12, 22, 9],
+  ] as const) {
+    let x = ox - Math.floor(rng() * width);
+    while (x < ox + T) {
+      const top = oy + minTop + Math.floor(rng() * (maxTop - minTop));
+      const w = 4 + Math.floor(rng() * width);
+      ctx.fillStyle = color;
+      ctx.fillRect(Math.max(x, ox), top, Math.min(w, ox + T - x), oy + T - top);
+
+      // lit windows
+      for (let wy = top + 3; wy < oy + T - 2; wy += 5) {
+        for (let wx = x + 2; wx < x + w - 2; wx += 4) {
+          if (wx < ox || wx > ox + T - 2) continue;
+          if (rng() > 0.62) rect(ctx, wx, wy, 2, 2, COLORS.windowWarm);
+        }
+      }
+      x += w + 1 + Math.floor(rng() * 3);
+    }
+  }
+});
+
+/** Festoon bulbs strung overhead. Walkable — you pass underneath them. */
+set(TILE_INDEX.stringLight, (ctx, ox, oy) => {
+  vGradient(ctx, ox, oy, mix(COLORS.decking, '#FFFFFF', 0.16), COLORS.decking);
+  for (let i = 0; i < 4; i += 1) {
+    rect(ctx, ox, oy + i * 8, T, 1, mix(COLORS.decking, '#000000', 0.3));
+  }
+  // the wire sags across the tile
+  ctx.strokeStyle = mix(COLORS.steel, '#000000', 0.3);
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(ox, oy + 5.5);
+  ctx.quadraticCurveTo(ox + T / 2, oy + 11.5, ox + T, oy + 5.5);
+  ctx.stroke();
+
+  for (const [bx, by] of [[6, 8], [16, 10], [26, 8]] as const) {
+    ctx.globalAlpha = 0.28;
+    ctx.fillStyle = COLORS.lampGlow;
+    ctx.beginPath();
+    ctx.arc(ox + bx, oy + by, 5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    rect(ctx, ox + bx - 1, oy + by - 1, 3, 3, COLORS.lampGlow);
+    rect(ctx, ox + bx - 1, oy + by - 1, 1, 1, '#FFFFFF');
+  }
+});
+
+/** Greenhouse glazing: a steel frame holding panes. Blocking. */
+set(TILE_INDEX.glassWall, (ctx, ox, oy) => {
+  vGradient(ctx, ox, oy, mix(COLORS.glassPane, '#FFFFFF', 0.35), COLORS.glassPane);
+  // condensation
+  grain(ctx, ox, oy, '#FFFFFF', 23, 18, 0.3);
+  // frame
+  rect(ctx, ox, oy, T, 2, COLORS.glassFrame);
+  rect(ctx, ox, oy + T - 2, T, 2, COLORS.glassFrame);
+  rect(ctx, ox + 15, oy, 2, T, COLORS.glassFrame);
+  rect(ctx, ox, oy + 15, T, 1, mix(COLORS.glassFrame, '#FFFFFF', 0.2));
+  // a diagonal highlight, which is what makes glass read as glass
+  ctx.globalAlpha = 0.35;
+  ctx.strokeStyle = '#FFFFFF';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(ox + 3, oy + T - 4);
+  ctx.lineTo(ox + T - 6, oy + 3);
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+});
+
+/** A raised planting bed with seedlings. Blocking. */
+set(TILE_INDEX.soilBed, (ctx, ox, oy) => {
+  vGradient(ctx, ox, oy, mix(COLORS.soilBed, '#FFFFFF', 0.18), COLORS.soilBed);
+  grain(ctx, ox, oy, mix(COLORS.soilBed, '#000000', 0.4), 41, 26, 0.5);
+  // timber edging
+  rect(ctx, ox, oy, T, 3, COLORS.benchWood);
+  rect(ctx, ox, oy, T, 1, mix(COLORS.benchWood, '#FFFFFF', 0.3));
+  rect(ctx, ox, oy + T - 3, T, 3, mix(COLORS.benchWood, '#000000', 0.25));
+  // seedlings
+  const rng = makeRng(53);
+  for (let i = 0; i < 7; i += 1) {
+    const sx = ox + 4 + Math.floor(rng() * (T - 8));
+    const sy = oy + 8 + Math.floor(rng() * 14);
+    rect(ctx, sx, sy, 1, 4, COLORS.foliageDark);
+    rect(ctx, sx - 2, sy, 2, 1, COLORS.foliage);
+    rect(ctx, sx + 1, sy + 1, 2, 1, COLORS.fernLight);
+  }
+});
+
+/** A big leafy fern. Blocking. */
+set(TILE_INDEX.fern, (ctx, ox, oy) => {
+  rect(ctx, ox, oy, T, T, '#B9B2A4');
+  grain(ctx, ox, oy, '#A39B8C', 29, 20, 0.4);
+  shadowEllipse(ctx, ox + 16, oy + 27, 10, 3);
+
+  // terracotta pot
+  rect(ctx, ox + 10, oy + 20, 12, 8, '#A85F3E');
+  rect(ctx, ox + 10, oy + 20, 12, 2, mix('#A85F3E', '#FFFFFF', 0.3));
+  rect(ctx, ox + 10, oy + 26, 12, 2, mix('#A85F3E', '#000000', 0.3));
+
+  // fronds, drawn as tapering strokes from the crown outward
+  const crownX = ox + 16;
+  const crownY = oy + 20;
+  const fronds: Array<[number, number, string]> = [
+    [-11, -8, COLORS.foliageDark],
+    [-6, -14, COLORS.foliage],
+    [0, -17, COLORS.fernLight],
+    [6, -14, COLORS.foliage],
+    [11, -8, COLORS.foliageDark],
+  ];
+  for (const [dx, dy, color] of fronds) {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(crownX, crownY);
+    ctx.quadraticCurveTo(crownX + dx * 0.5, crownY + dy * 0.5, crownX + dx, crownY + dy);
+    ctx.stroke();
+    rect(ctx, crownX + dx - 1, crownY + dy - 1, 3, 3, color);
+  }
+});
+
+/** Stone path between the beds. Walkable. */
+set(TILE_INDEX.gardenPath, (ctx, ox, oy) => {
+  vGradient(ctx, ox, oy, '#C2BBAC', '#ADA595');
+  const rng = makeRng(37);
+  // irregular flags, so it does not read as a grid inside a grid
+  for (let i = 0; i < 5; i += 1) {
+    const px = ox + 2 + Math.floor(rng() * 20);
+    const py = oy + 2 + Math.floor(rng() * 20);
+    const w = 6 + Math.floor(rng() * 7);
+    const h = 5 + Math.floor(rng() * 6);
+    rect(ctx, px, py, Math.min(w, ox + T - px - 1), Math.min(h, oy + T - py - 1), '#CFC8B9');
+    rect(ctx, px, py, Math.min(w, ox + T - px - 1), 1, '#DED7C8');
+  }
+  grain(ctx, ox, oy, '#8F887A', 19, 16, 0.28);
+});
+
+
+// ---------------------------------------------------------------------------
+// Cafe drinks (03) — one small sprite per entry in shared/drinks.ts
+// ---------------------------------------------------------------------------
+
+export function drinkTextureKey(id: string): string {
+  return `drink_${id}`;
+}
+
+/**
+ * A mug per drink, drawn small because it sits above a nameplate.
+ *
+ * Read at roughly 20px tall, so the silhouette does the work: everything is a
+ * white ceramic mug and only the liquid, the foam and the steam change. That
+ * makes an unfamiliar drink still legible as "someone is holding a drink",
+ * which is the part that matters socially.
+ */
+export function generateDrinkSprites(scene: Phaser.Scene): void {
+  for (const drink of DRINKS) {
+    const key = drinkTextureKey(drink.id);
+    const texture = createCanvas(scene, key, 20, 24);
+    const ctx = texture.getContext();
+    ctx.imageSmoothingEnabled = false;
+
+    const ceramic = '#F2EFE9';
+    const ceramicShade = mix(ceramic, '#000000', 0.18);
+
+    // steam, above the cup
+    ctx.globalAlpha = 0.45;
+    for (const [sx, sy] of [[7, 1], [11, 0]] as const) {
+      rect(ctx, sx, sy + 1, 1, 2, '#FFFFFF');
+      rect(ctx, sx + 1, sy + 3, 1, 2, '#FFFFFF');
+    }
+    ctx.globalAlpha = 1;
+
+    // saucer
+    rect(ctx, 2, 21, 16, 2, ceramicShade);
+    rect(ctx, 3, 20, 14, 1, ceramic);
+
+    // handle, behind the body so the body's edge overlaps it cleanly
+    rect(ctx, 15, 11, 3, 2, ceramicShade);
+    rect(ctx, 17, 12, 2, 4, ceramicShade);
+    rect(ctx, 15, 15, 3, 2, ceramicShade);
+
+    // body
+    rect(ctx, 4, 8, 12, 13, ceramic);
+    rect(ctx, 12, 8, 4, 13, ceramicShade);
+    rect(ctx, 4, 8, 2, 13, mix(ceramic, '#FFFFFF', 0.6));
+
+    // liquid, and foam on top of it where the drink has a head
+    rect(ctx, 5, 9, 10, 3, drink.color);
+    rect(ctx, 5, 9, 10, 1, mix(drink.color, '#FFFFFF', 0.35));
+    if (drink.foam) {
+      rect(ctx, 5, 9, 10, 2, mix(drink.color, '#FFFFFF', 0.72));
+      rect(ctx, 7, 9, 5, 1, '#FFFFFF');
+    }
+
+    // rim, drawn last so it reads as the near edge of the cup
+    rect(ctx, 4, 8, 12, 1, mix(ceramic, '#FFFFFF', 0.8));
+    texture.refresh();
+  }
+}
+
+/** Draws the whole tileset into one texture, 8 columns x 8 rows. */
 export function generateTileset(scene: Phaser.Scene): void {
   const width = T * TILESET_COLUMNS;
   const height = T * TILESET_ROWS;
@@ -1380,22 +1691,36 @@ export function generateInteractableSprites(scene: Phaser.Scene): void {
   });
 
   // --- cafe seat: small round table with a chair ---
+  /**
+   * A chair.
+   *
+   * Redrawn in Phase 6. The old one put a small white cup on top, which was the
+   * brightest thing on the sprite — at the zoom the game actually runs at, a
+   * row of seats read as a row of mugs. The cup is also now a real feature that
+   * appears over a player's head, so a painted-on one was actively misleading.
+   * This is just a chair, with a taller back so the silhouette carries.
+   */
   prop(ASSET_KEYS.seat, 48, (ctx) => {
     shadowEllipse(ctx, 16, 45, 12, 3.5);
     const wood = COLORS.benchWood;
-    // chair
-    rect(ctx, 9, 14, 14, 12, mix(wood, '#000000', 0.25));
-    rect(ctx, 9, 14, 14, 2, mix(wood, '#FFFFFF', 0.3));
-    rect(ctx, 8, 26, 16, 5, mix(wood, '#FFFFFF', 0.15));
-    rect(ctx, 10, 31, 3, 10, mix(wood, '#000000', 0.35));
-    rect(ctx, 19, 31, 3, 10, mix(wood, '#000000', 0.35));
-    // cup on the table edge
-    rect(ctx, 14, 9, 5, 5, COLORS.dialogueBoxBg);
-    rect(ctx, 14, 9, 5, 1, mix(COLORS.cafeBg, '#FFFFFF', 0.4));
-    ctx.globalAlpha = 0.45;
-    rect(ctx, 15, 6, 1, 3, '#FFFFFF');
-    rect(ctx, 17, 5, 1, 4, '#FFFFFF');
-    ctx.globalAlpha = 1;
+    const dark = mix(wood, '#000000', 0.35);
+
+    // back, with two spindles so it does not read as a solid block
+    rect(ctx, 8, 8, 16, 3, mix(wood, '#FFFFFF', 0.28));
+    rect(ctx, 8, 11, 3, 14, mix(wood, '#000000', 0.2));
+    rect(ctx, 21, 11, 3, 14, mix(wood, '#000000', 0.2));
+    rect(ctx, 13, 12, 2, 12, mix(wood, '#000000', 0.1));
+    rect(ctx, 17, 12, 2, 12, mix(wood, '#000000', 0.1));
+
+    // seat pad, slightly wider than the back so it reads in perspective
+    rect(ctx, 6, 25, 20, 7, mix(wood, '#FFFFFF', 0.12));
+    rect(ctx, 6, 25, 20, 2, mix(wood, '#FFFFFF', 0.42));
+    rect(ctx, 6, 30, 20, 2, dark);
+
+    // legs
+    rect(ctx, 8, 32, 3, 10, dark);
+    rect(ctx, 21, 32, 3, 10, dark);
+    rect(ctx, 8, 38, 16, 2, mix(dark, '#FFFFFF', 0.15));
   });
 
   // --- reading nook: armchair and a floor lamp ---
@@ -1629,6 +1954,7 @@ export function ensureOutfitSheet(scene: Phaser.Scene, color: string, hat?: HatP
 /** Everything the game needs. One call from BootScene. */
 export function generateAllPlaceholderArt(scene: Phaser.Scene): void {
   generateTileset(scene);
+  generateDrinkSprites(scene);
   generateCharacterSheet(scene, ASSET_KEYS.playerSheet, COLORS.playerBody);
   generateCharacterSheet(scene, ASSET_KEYS.remoteSheet, COLORS.remoteBody);
   generateCharacterSheet(scene, ASSET_KEYS.npcSheet, COLORS.npcBody);

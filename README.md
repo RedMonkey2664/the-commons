@@ -9,7 +9,7 @@ The point is **presence, not progression** — see
 
 ---
 
-## Status: Phase 5 complete, on placeholder art
+## Status: Phase 6 — the roadmap is finished, the world is still growing
 
 | Phase | Scope | State |
 |---|---|---|
@@ -19,31 +19,47 @@ The point is **presence, not progression** — see
 | **3** | Persistence, arcade minigames, study tracking, text chat | **Done** — 17/17 arcade checks |
 | **4** | Shared jukebox + voice policy | **Done** — 20/20 music checks |
 | **5** | Remaining minigames, cosmetics, ambient life, sound | **Done** — 37/37 polish checks |
+| **6** | Two more zones, two more cabinets, cafe drinks, interior art | **Done** — 29/29 world checks |
 | 3a | Supabase auth + real accounts | **Blocked** — needs credentials |
 | 4a | Voice transport (LiveKit) | **Blocked** — needs credentials |
 | 5a | Real pixel art to replace the procedural placeholders | **Blocked** — needs source art |
 
-166 checks pass across the six suites. Every one drives a real browser against
-a real server and asserts on real game state; none of them stub the game.
+195 checks pass across the seven suites. Every one drives a real browser
+against a real server and asserts on real game state; none of them stub the
+game.
+
+**There is no Phase 6 in the specs.** 08's roadmap ends at Phase 5, whose last
+bullet is "anything you think of after actually using it with friends — this is
+the phase where the config-driven architecture pays off, since new
+zones/minigames/cosmetics should be additive from here on, not rewrites". Phase
+6 is that bullet taken literally, and it is the first real test of the claim:
+two zones and two cabinets were added, and the engine, the network layer, the
+transition system and the arcade were not touched. What *did* need changing is
+listed honestly under [Where the config claim leaked](#where-the-config-claim-leaked).
 
 **Playable right now:** type a name and walk the whole town, play the arcade,
-and talk to whoever is in the room with you. Six zones —
-Town Square, Library, Cafe, Arcade, Park and Study Rooms — all connected by
-doors you walk onto, with a fade transition and an arrival point that puts you
+and talk to whoever is in the room with you. Eight zones —
+Town Square, Library, Cafe, Arcade, Park, Study Rooms, the Skyline Terrace and
+the Greenhouse — all connected by doors you walk onto, with a fade transition and an arrival point that puts you
 back at the door you came out of. Grid-based WASD movement with tile collision,
 bump feedback and turn-in-place. Space reads signposts and talks to NPCs through
 a dialogue box; "!" bubbles mark anything interactable. Sit at a library focus
 pod and your status becomes `studying` — no start button, just sitting down.
 Esc opens the friends panel showing who is in the room with you.
 
-The Arcade has five working cabinets: **Memory Match** and **Retro Runner**
-(solo), **Trivia Blitz** and **Reaction Tap** (up to four players, scored by the
-server), and **Rhythm Tap**, which charts itself from a jukebox track. Scores
-persist and come back as a leaderboard. Sitting at a focus pod accrues **study time**, timed by the
+The Arcade has seven working cabinets: **Memory Match**, **Retro Runner** and
+**Stack Tower** (solo), **Trivia Blitz**, **Reaction Tap** and **Word Rush** (up
+to four players, scored by the server), and **Rhythm Tap**, which charts itself
+from a jukebox track. Scores persist and come back as a leaderboard. Sitting at a focus pod accrues **study time**, timed by the
 server and written when you stand up. **Enter** opens chat — messages appear as
 bubbles over the speaker and in a log panel.
 
-The **Cafe jukebox** and **Park bandstand** play one shared queue per room.
+At the **cafe counter** you can order a drink. It costs nothing, unlocks
+nothing and does nothing except put a mug over your head that everyone else in
+the room can see — which is the entire point of it (03).
+
+The **Cafe jukebox**, **Park bandstand** and **terrace speakers** each play one
+shared queue per room.
 Everyone in the room hears the same track at the same point in it, including
 someone who walks in halfway through. Queue a track, or vote to skip.
 
@@ -97,6 +113,9 @@ node tools/phase2_world.mjs   # walks every zone door and back (single-player)
 node tools/phase3_arcade.mjs  # arcade, chat and persistence
 node tools/phase4_music.mjs   # shared jukebox sync and voice policy
 node tools/phase5_polish.mjs  # remaining minigames, cosmetics, ambient
+node tools/phase6_world.mjs   # new zones, new cabinets, cafe drinks
+node tools/capture_zones.mjs  # screenshot zones, for looking at rather than asserting on
+node tools/capture_tileset.mjs # dump the generated tileset, labelled by index
 node tools/capture_screens.mjs # screenshot the loading, title and world screens
 ```
 
@@ -419,6 +438,26 @@ To turn it on, set `LIVEKIT_URL`, `LIVEKIT_API_KEY` and `LIVEKIT_API_SECRET` in
 `server/.env` and restart.
 
 ---
+
+## Where the config claim leaked
+
+Adding two zones and two cabinets touched exactly the files the architecture
+says it should: `zones.config.ts`, `minigames.config.ts`, two scene files, two
+registry lines, two map builders. No engine file changed to accommodate them.
+
+Three things did leak, and all three were the same bug wearing different hats —
+**a list of valid values restated somewhere the compiler could not check it**:
+
+| Where | What happened |
+|---|---|
+| `tools/verify_maps.mjs` | Kept its own copy of the zone ids. Every door into a new zone failed verification until that copy was updated. Now read out of `zones.config.ts`. |
+| `shared/tilemap.ts` | `INTERACTABLE_KINDS` was typed `readonly InteractableKind[]`, which a *subset* satisfies. Adding `drink_counter` to the union left the array stale, and every cafe counter was silently dropped at parse time — no error, no warning, just no counter. Now a `Record<InteractableKind, true>`, so a missing key fails the build. |
+| `client/src/scenes/BootScene.ts` | Builds art step by step and had to be told about the new drink sprites. `generateAllPlaceholderArt()` covers isolation-booted zones, which masks the omission everywhere except the real boot path — the same trap as Phase 2. |
+| Three older test suites | Asserted literal counts — "12 interactables", "all five minigames have a cabinet". Adding to the world broke tests that were checking a number rather than a property. All three now read the expected set from config; the cabinet one had already gone stale once in Phase 5 and was fixed by bumping 2 to 5, which is why it broke again. |
+
+The lesson is narrow and worth keeping: config-driven only holds if the *set of
+valid things* has exactly one definition. A second copy typed loosely enough to
+accept a subset is worse than no check at all, because it fails silently.
 
 ## Known deviations from the specs
 

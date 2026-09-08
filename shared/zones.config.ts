@@ -24,10 +24,13 @@ export const ZONES: ZoneConfig[] = [
       park: { x: 19, y: 2 },
       arcade: { x: 19, y: 25 },
       study_room: { x: 23, y: 25 },
+      greenhouse: { x: 7, y: 7 },
+      skyline_terrace: { x: 36, y: 14 },
     },
     ambientSound: 'ambient_outdoor',
     interactables: [
       'sign_library', 'sign_cafe', 'sign_park', 'sign_arcade', 'sign_welcome',
+      'sign_greenhouse', 'sign_terrace',
       'npc_wanderer', 'npc_gardener',
     ],
     voiceChatDefault: 'unmuted',
@@ -43,6 +46,7 @@ export const ZONES: ZoneConfig[] = [
     ambientSound: 'library_quiet',
     interactables: [
       'focus_pod_1', 'focus_pod_2', 'focus_pod_3', 'focus_pod_4',
+      'reading_seat_1', 'reading_seat_2', 'reading_seat_3', 'reading_seat_4',
       'reading_nook', 'npc_librarian', 'door_town_square',
     ],
     voiceChatDefault: 'muted',
@@ -57,9 +61,12 @@ export const ZONES: ZoneConfig[] = [
     spawnPoint: { x: 10, y: 14 },
     ambientSound: 'cafe_chatter',
     interactables: [
-      'jukebox', 'counter_barista',
+      'jukebox', 'counter_barista', 'drink_counter',
+      'stool_1', 'stool_2', 'stool_3', 'stool_4',
       'booth_1', 'booth_2', 'booth_3', 'booth_4',
-      'table_1', 'table_2', 'door_town_square',
+      'communal_1', 'communal_2', 'communal_3', 'communal_4',
+      'corner_table_1', 'corner_table_2',
+      'door_town_square',
     ],
     voiceChatDefault: 'unmuted',
     bgColorToken: 'cafeBg',
@@ -103,6 +110,40 @@ export const ZONES: ZoneConfig[] = [
     // One Colyseus room per group, joined by code — not one global room.
     instanced: true,
     bgColorToken: 'libraryBg',
+  },
+  {
+    id: 'skyline_terrace',
+    displayName: 'Skyline Terrace',
+    tilemapKey: 'skyline_terrace_map',
+    mapFile: 'maps/skyline_terrace.json',
+    sceneKey: 'SkylineTerraceScene',
+    spawnPoint: { x: 12, y: 13 },
+    ambientSound: 'ambient_outdoor',
+    // A second jukebox room. 04's shared-queue mechanic is per room, so the
+    // terrace has its own queue rather than mirroring the cafe below it.
+    interactables: [
+      'terrace_speakers', 'lounger_1', 'lounger_2', 'lounger_3', 'lounger_4',
+      'npc_smoker', 'door_town_square',
+    ],
+    voiceChatDefault: 'unmuted',
+    bgColorToken: 'terraceBg',
+  },
+  {
+    id: 'greenhouse',
+    displayName: 'Greenhouse',
+    tilemapKey: 'greenhouse_map',
+    mapFile: 'maps/greenhouse.json',
+    sceneKey: 'GreenhouseScene',
+    spawnPoint: { x: 11, y: 13 },
+    ambientSound: 'library_quiet',
+    interactables: [
+      'potting_bench_1', 'potting_bench_2', 'garden_nook',
+      'npc_grower', 'door_town_square',
+    ],
+    // Quiet for a different reason than the Library: not enforced, just the
+    // kind of room nobody raises their voice in.
+    voiceChatDefault: 'muted',
+    bgColorToken: 'greenhouseBg',
   },
 ];
 

@@ -189,7 +189,16 @@ try {
       .zoneMap.interactables.filter((o) => o.kind === 'cabinet')
       .map((o) => o.props.minigameId),
   );
-  check('all five minigames have a cabinet', cabinets.length === 5, JSON.stringify(cabinets));
+  // Counted against config rather than a literal. This assertion has now been
+  // wrong twice — once when Phase 5 added three cabinets to a test expecting
+  // two, and again when Phase 6 added two more.
+  const configuredGames = await alpha.page.evaluate(async (port) => {
+    const r = await fetch(`http://localhost:${port}/health`);
+    return (await r.json()).minigames;
+  }, SERVER_PORT);
+  check('every configured minigame has a cabinet',
+    configuredGames.every((id) => cabinets.includes(id)),
+    `config=${configuredGames.join(',')} cabinets=${cabinets.join(',')}`);
   check('every cabinet has a registered scene',
     await alpha.page.evaluate((keys) => keys.every((k) => Boolean(window.__COMMONS__.game.scene.getScene(k))), MINIGAME_KEYS),
     '');

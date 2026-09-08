@@ -121,6 +121,9 @@ export class MultiplayerSystem {
       facing: state.facing,
       status: state.status,
     });
+    // Applied after construction rather than passed in: someone already holding
+    // a drink when you walk into the room must arrive holding it.
+    if (state.drink) remote.applyDrink(state.drink);
     this.remotes.set(sessionId, remote);
     // Remembered locally so they still appear in the friends panel, offline,
     // after they leave. Replaced by a real friends table in Phase 3.
@@ -140,6 +143,7 @@ export class MultiplayerSystem {
 
     remote.moveTo({ x: state.x, y: state.y }, state.facing);
     if (remote.status !== state.status) remote.applyStatus(state.status);
+    if (remote.drink !== (state.drink ?? '')) remote.applyDrink(state.drink ?? '');
   }
 
   handlePlayerRemove(sessionId: string): void {
@@ -198,6 +202,11 @@ export class MultiplayerSystem {
     // Mid-step is exactly when a correction is most likely, and teleport()
     // stops the in-flight tween rather than letting it land on a stale tile.
     this.player.movement.teleport(tile);
+  }
+
+  /** Send a drink order upstream. Cosmetic, so there is nothing to reconcile. */
+  pushDrink(drink: string): void {
+    this.network.sendDrink(drink);
   }
 
   pushStatus(status: PlayerStatus): void {

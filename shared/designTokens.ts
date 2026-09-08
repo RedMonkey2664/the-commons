@@ -31,6 +31,8 @@ export const COLORS = {
   libraryBg: '#B8A88F',
   cafeBg: '#D9A87C',
   arcadeBg: '#5B4B85',
+  terraceBg: '#3B4664',
+  greenhouseBg: '#89AE84',
   parkBg: '#7FB98A',
 
   dialogueBoxBg: '#FAFAF7',
@@ -83,6 +85,30 @@ export const COLORS = {
   steel: '#6E747C',
   storefront: '#3A4048',
   roofEdge: '#767B82',
+
+  // Interior floors (Phase 6)
+  carpet: '#6E3630',
+  rugBase: '#7A4A38',
+  rugPattern: '#D8B98A',
+  terrazzo: '#D9D2C6',
+  terrazzoWarm: '#C7B49C',
+  terrazzoFleck: '#8A7F70',
+
+  // Rooftop terrace at dusk. The sky is a real gradient rather than a flat
+  // fill because the terrace is mostly sky, and a flat band reads as a wall.
+  duskSkyTop: '#2C3752',
+  duskSkyLow: '#8A6478',
+  skylineFar: '#414D6B',
+  skylineNear: '#232A3B',
+  windowWarm: '#F0C97A',
+  decking: '#B08A62',
+  railGlass: '#9FBECF',
+
+  // Greenhouse
+  glassPane: '#C4DCD6',
+  glassFrame: '#7E8A80',
+  soilBed: '#5A4432',
+  fernLight: '#6FB05E',
 
   // Nature & props
   foliage: '#3F7A47',

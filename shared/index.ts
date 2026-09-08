@@ -9,5 +9,6 @@ export * from './minigames.js';
 export * from './jukebox.js';
 export * from './voice.js';
 export * from './cosmetics.js';
+export * from './drinks.js';
 export * from './zones.config.js';
 export * from './minigames.config.js';

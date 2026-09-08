@@ -12,6 +12,8 @@ import { MemoryMatchScene } from './MemoryMatchScene';
 import { ReactionTapScene } from './ReactionTapScene';
 import { RetroRunnerScene } from './RetroRunnerScene';
 import { RhythmTapScene } from './RhythmTapScene';
+import { StackTowerScene } from './StackTowerScene';
+import { WordRushScene } from './WordRushScene';
 import { TriviaBlitzScene } from './TriviaBlitzScene';
 
 export const MINIGAME_SCENE_CLASSES: Array<new () => Phaser.Scene> = [
@@ -20,4 +22,6 @@ export const MINIGAME_SCENE_CLASSES: Array<new () => Phaser.Scene> = [
   ReactionTapScene,
   RetroRunnerScene,
   RhythmTapScene,
+  WordRushScene,
+  StackTowerScene,
 ];

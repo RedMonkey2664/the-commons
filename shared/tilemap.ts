@@ -89,12 +89,31 @@ export interface ParsedMap {
   spawn: TileCoord | null;
 }
 
-const INTERACTABLE_KINDS: readonly InteractableKind[] = [
-  'signpost', 'npc', 'door', 'focus_pod', 'seat', 'jukebox', 'cabinet', 'reading_nook',
-];
+/**
+ * Every interactable kind a map may declare.
+ *
+ * Written as a Record keyed by the union rather than an array of it, because an
+ * array typed `readonly InteractableKind[]` is satisfied by a SUBSET — so
+ * adding 'drink_counter' to the union left this list stale and every cafe
+ * counter was silently dropped at parse time with no error anywhere. As a
+ * Record, a missing key is a compile error.
+ */
+const INTERACTABLE_KIND_SET: Record<InteractableKind, true> = {
+  signpost: true,
+  npc: true,
+  door: true,
+  focus_pod: true,
+  seat: true,
+  jukebox: true,
+  cabinet: true,
+  reading_nook: true,
+  drink_counter: true,
+};
+
+const INTERACTABLE_KINDS: readonly string[] = Object.keys(INTERACTABLE_KIND_SET);
 
 function isInteractableKind(value: unknown): value is InteractableKind {
-  return typeof value === 'string' && (INTERACTABLE_KINDS as readonly string[]).includes(value);
+  return typeof value === 'string' && INTERACTABLE_KINDS.includes(value);
 }
 
 function propsToRecord(properties?: TiledProperty[]): Record<string, string | number | boolean> {

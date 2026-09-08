@@ -29,6 +29,8 @@ export const CLIENT_MESSAGE = {
   face: 'face',
   /** Status change driven by location + action, never a manual toggle (11). */
   status: 'status',
+  /** Order (or put down) a cafe drink. Cosmetic only. */
+  drink: 'drink',
 } as const;
 
 /** Server -> client message names. */
@@ -53,6 +55,11 @@ export interface FaceIntent {
 
 export interface StatusIntent {
   status: PlayerStatus;
+}
+
+export interface DrinkIntent {
+  /** A drink id, or '' to put it down. Validated server-side. */
+  drink: string;
 }
 
 export interface CorrectionMessage {

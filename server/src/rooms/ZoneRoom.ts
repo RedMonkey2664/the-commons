@@ -18,6 +18,7 @@ import type {
   ChatMessage,
   ChatSayIntent,
   Direction,
+  DrinkIntent,
   FaceIntent,
   JoinOptions,
   MoveIntent,
@@ -38,6 +39,7 @@ import {
   MOVE_RATE_LIMIT,
   SERVER_MESSAGE,
   getZone,
+  isValidDrinkId,
   resolveEntryPoint,
   tileInFront,
 } from '@commons/shared';
@@ -105,6 +107,15 @@ export class ZoneRoom extends Room<ZoneState> {
 
     this.onMessage(CLIENT_MESSAGE.status, (client, message: StatusIntent) => {
       this.handleStatus(client, message);
+    });
+
+    this.onMessage(CLIENT_MESSAGE.drink, (client, message: DrinkIntent) => {
+      const player = this.state.players.get(client.sessionId);
+      // Validated against the shared list rather than trusted: it is only
+      // cosmetic, but an unvalidated string here would sync arbitrary client
+      // text to every other player in the room, which is a different problem.
+      if (!player || !isValidDrinkId(message?.drink)) return;
+      player.drink = message.drink;
     });
 
     this.onMessage(CHAT_CLIENT_MESSAGE.say, (client, message: ChatSayIntent) => {

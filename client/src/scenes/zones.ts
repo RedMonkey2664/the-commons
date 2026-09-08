@@ -6,8 +6,9 @@
  * animation, networking or HUD code. All of that is derived by ZoneScene from
  * the zone's entry in zones.config.ts and its Tiled map.
  *
- * Adding the sixth zone means: a config entry, a Tiled map, four lines here,
- * and one line in zoneSceneRegistry.ts.
+ * Adding a zone means: a config entry, a Tiled map, four lines here, and one
+ * line in zoneSceneRegistry.ts. Phase 6 added two this way — the Skyline
+ * Terrace and the Greenhouse — and changed nothing else in the engine.
  */
 
 import { MINIGAMES, getZone, type TileCoord } from '@commons/shared';
@@ -36,6 +37,18 @@ export class ParkScene extends ZoneScene {
 export class StudyRoomScene extends ZoneScene {
   constructor() {
     super(getZone('study_room'));
+  }
+}
+
+export class SkylineTerraceScene extends ZoneScene {
+  constructor() {
+    super(getZone('skyline_terrace'));
+  }
+}
+
+export class GreenhouseScene extends ZoneScene {
+  constructor() {
+    super(getZone('greenhouse'));
   }
 }
 

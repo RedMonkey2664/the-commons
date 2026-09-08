@@ -75,13 +75,28 @@ export interface PlayerState {
   status: PlayerStatus;
   /** Set while the player is inside an arcade cabinet. */
   currentMinigame?: string;
+  /**
+   * Drink being carried, or '' for none (03's cafe "order a drink").
+   *
+   * Room state rather than a saved preference: it is a thing you are holding
+   * here and now, and it does not follow you between sessions.
+   */
+  drink?: string;
 }
 
 // ---------------------------------------------------------------------------
 // Zones (02_TECH_STACK_ARCHITECTURE.md, 03_WORLD_MAP_ZONES.md)
 // ---------------------------------------------------------------------------
 
-export type ZoneId = 'town_square' | 'library' | 'cafe' | 'arcade' | 'park' | 'study_room';
+export type ZoneId =
+  | 'town_square'
+  | 'library'
+  | 'cafe'
+  | 'arcade'
+  | 'park'
+  | 'study_room'
+  | 'skyline_terrace'
+  | 'greenhouse';
 
 /** Zone-level social default, applied on join and always manually overridable. */
 export type VoiceChatDefault = 'muted' | 'unmuted';
@@ -136,7 +151,8 @@ export type InteractableKind =
   | 'seat'
   | 'jukebox'
   | 'cabinet'
-  | 'reading_nook';
+  | 'reading_nook'
+  | 'drink_counter';
 
 /** An object placed on a Tiled object layer, normalized into tile space. */
 export interface InteractableObject {

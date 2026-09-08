@@ -24,6 +24,7 @@ export class PlayerSchema extends Schema {
   @type('string') facing: Direction = 'down';
   @type('string') status: PlayerStatus = 'idle';
   @type('string') currentMinigame = '';
+  @type('string') drink = '';
 
   /**
    * Last client intent this player's state reflects. The client compares it
@@ -51,6 +52,7 @@ function assertMatchesSharedShape(schema: PlayerSchema): void {
     facing: schema.facing,
     status: schema.status,
     currentMinigame: schema.currentMinigame,
+    drink: schema.drink,
   };
   void asShared;
 }

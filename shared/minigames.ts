@@ -126,6 +126,28 @@ export const REACTION_TAP_RULES = {
  * Difficulty may ramp within a session but resets per session — no
  * meta-progression gating content.
  */
+/**
+ * Word Rush (Phase 6) — 1-4 players, server-authoritative.
+ *
+ * One rack of letters per round, one word each, longest word wins. Scoring is
+ * length-first and speed-second on purpose: rewarding speed above all would
+ * make it a typing race, and the interesting decision is "do I submit `rain`
+ * now or hunt for `trained`".
+ */
+export const WORD_RUSH_RULES = {
+  rounds: 5,
+  /** Time to find and submit one word. */
+  roundMs: 25_000,
+  revealMs: 3200,
+  countdownMs: 3000,
+  lobbyWaitMs: 20_000,
+  minWordLength: 3,
+  /** Points per letter, squared — 'trained' is worth far more than 'rain'. */
+  pointsPerLetter: 6,
+  /** Added on top, decaying to zero at the buzzer, so ties break on speed. */
+  maxSpeedBonus: 25,
+} as const;
+
 export const TRIVIA_RULES = {
   questionsPerGame: 8,
   /** Time to answer one question. */

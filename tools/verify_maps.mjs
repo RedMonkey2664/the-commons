@@ -21,9 +21,23 @@ import { fileURLToPath } from 'node:url';
 const here = dirname(fileURLToPath(import.meta.url));
 const MAPS_DIR = resolve(here, '..', 'assets', 'maps');
 
-const KNOWN_ZONE_IDS = new Set([
-  'town_square', 'library', 'cafe', 'arcade', 'park', 'study_room',
-]);
+/**
+ * Read straight out of zones.config.ts rather than restated here.
+ *
+ * This was a hardcoded copy of the zone list, which meant adding a zone made
+ * every door into it fail verification until someone remembered to edit this
+ * file too — the exact "config quietly eroding into a special case" the
+ * architecture is meant to prevent, sitting in the tool that checks for it.
+ */
+const KNOWN_ZONE_IDS = new Set(
+  [...readFileSync(resolve(here, '..', 'shared', 'zones.config.ts'), 'utf8')
+    .matchAll(/^\s{4}id: '([a-z_]+)',$/gm)].map((m) => m[1]),
+);
+
+if (KNOWN_ZONE_IDS.size === 0) {
+  console.error('could not read any zone ids from shared/zones.config.ts');
+  process.exit(1);
+}
 
 function propsOf(entity) {
   const out = {};

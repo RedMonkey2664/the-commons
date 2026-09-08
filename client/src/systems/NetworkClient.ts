@@ -36,6 +36,8 @@ export interface NetworkPlayer {
   facing: Direction;
   status: PlayerStatus;
   currentMinigame: string;
+  /** Cafe drink being carried, '' for none (03). */
+  drink: string;
   lastSeq: number;
 }
 
@@ -228,6 +230,11 @@ export class NetworkClient {
 
   sendStatus(status: PlayerStatus): void {
     this.room?.send(CLIENT_MESSAGE.status, { status });
+  }
+
+  /** Order a drink, or '' to put it down. Cosmetic; the server validates it. */
+  sendDrink(drink: string): void {
+    this.room?.send(CLIENT_MESSAGE.drink, { drink });
   }
 
   sendChat(text: string): void {

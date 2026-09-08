@@ -18,7 +18,7 @@ import random
 TILE = 32
 TILESET_NAME = "commons_city"
 TILESET_COLUMNS = 8
-TILE_COUNT = 56
+TILE_COUNT = 64
 
 # --- tile vocabulary (must match TILE_INDEX in placeholderArt.ts) -----------
 GRASS, GRASS_FLOWERS, GRASS_PATCH, PAVING, PAVING_SEAM, PLAZA, PLAZA_ACCENT, PLAZA_INLAY = range(8)
@@ -28,6 +28,7 @@ TREE, TREE_SMALL, HEDGE, PLANTER, BENCH, LAMP, FLOWERBED, BOLLARD = range(24, 32
 WOOD_FLOOR, WOOD_FLOOR_DARK, CARPET, TILE_FLOOR, TILE_FLOOR_ALT, ARCADE_FLOOR, STUDY_FLOOR, STAGE_FLOOR = range(32, 40)
 WALL_INT, WALL_SKIRT, WINDOW_INT, COUNTER_FRONT, COUNTER_TOP, BOOKSHELF, SHELF_LOW, NEON_STRIP = range(40, 48)
 PATH_DIRT, POND, POND_EDGE, PICNIC_TABLE, FENCE, RUG, CHALKBOARD, KITCHEN_TILE = range(48, 56)
+ROOF_DECK, ROOF_RAIL, SKYLINE, STRING_LIGHT, GLASS_WALL, SOIL_BED, FERN, GARDEN_PATH = range(56, 64)
 
 COLLIDING = {
     WATER, WATER_RIPPLE, FOUNTAIN_RIM,
@@ -36,6 +37,7 @@ COLLIDING = {
     WALL_INT, WALL_SKIRT, WINDOW_INT, COUNTER_FRONT, COUNTER_TOP,
     BOOKSHELF, SHELF_LOW, NEON_STRIP, CHALKBOARD,
     POND, PICNIC_TABLE, FENCE,
+    ROOF_RAIL, SKYLINE, GLASS_WALL, SOIL_BED, FERN,
 }
 
 AMBIENT = {
@@ -49,6 +51,9 @@ AMBIENT = {
     KITCHEN_TILE: "cafeSteam",
     SHELF_LOW: "pageTurn",
     STAGE_FLOOR: "bandstandPulse",
+    # Phase 6
+    STRING_LIGHT: "stringGlow",
+    FERN: "grassSway",
 }
 
 OUT_DIR = os.path.join(os.path.dirname(__file__), "..", "assets", "maps")
@@ -259,6 +264,11 @@ def build_town_square():
     cafe_door = building(m, 30, 8, 37, 13, door_x=33, door_side="south")
     arc_door = building(m, 14, 26, 25, 29, door_x=19, door_side="north")
 
+    # A glasshouse on the north-west lawn, and a lift up to the terrace sharing
+    # the cafe block. Both are one step from the square, which 03 asks for
+    # explicitly ("never more than one hop from spawn to any zone").
+    green_door = building(m, 3, 2, 10, 6, door_x=7, door_side="south")
+
     # forecourt paving in front of each entrance
     m.fill_ground(4, 14, 8, 14, PAVING)
     m.fill_ground(31, 14, 35, 14, PAVING)
@@ -266,6 +276,24 @@ def build_town_square():
     m.set_ground(lib_door[0], lib_door[1], PAVING)
     m.set_ground(cafe_door[0], cafe_door[1], PAVING)
     m.set_ground(arc_door[0], arc_door[1], PAVING)
+    # Route to the glasshouse door: one lane along y=7 between the glasshouse
+    # and the library roof, then down the gap east of the library to the west
+    # avenue. Paved as well as cleared, because the scatter pass runs later and
+    # replants any tile still reading as GRASS — a tree at x=9 sealed the door
+    # into a pocket the first time. Kept strictly to y=7: clearing y=8 as well
+    # punched a walkable hole straight through the library's north wall.
+    m.fill_decor(6, 7, 11, 7, -1)
+    m.fill_decor(10, 8, 11, 16, -1)
+    m.fill_ground(6, 7, 11, 7, PAVING)
+    m.fill_ground(10, 8, 11, 16, PAVING)
+    m.set_ground(green_door[0], green_door[1], PAVING)
+
+    # The terrace lift is a second street door in the cafe block rather than a
+    # building of its own: the terrace IS the roof of that block, and giving it
+    # a separate facade elsewhere in the square would say otherwise.
+    m.set_decor(36, 13, -1)
+    m.set_ground(36, 13, PAVING)
+    m.set_ground(36, 14, PAVING)
 
     # awnings flanking the entrances
     for ax in (lib_door[0] - 1, lib_door[0] + 1):
@@ -363,6 +391,12 @@ def build_town_square():
     m.add_object("sign_arcade", "signpost", 18, 23, True, {
         "text": "SOUTH: THE ARCADE|Cabinets, high scores, and the only losing in this town.",
     })
+    m.add_object("sign_greenhouse", "signpost", 12, 6, True, {
+        "text": "NORTH-WEST: THE GREENHOUSE|Somewhere warm to work. Mind the watering cans.",
+    })
+    m.add_object("sign_terrace", "signpost", 35, 14, True, {
+        "text": "LIFT: THE SKYLINE TERRACE|Roof of the cafe block. Best at dusk.",
+    })
 
     m.add_object("npc_wanderer", "npc", 15, 16, True, {
         "text": "Oh - hey. I do laps round the fountain while my timer runs.|"
@@ -388,6 +422,8 @@ def build_town_square():
         ("door_arcade", arc_door[0], arc_door[1], "arcade", "ARCADE"),
         ("door_park", 19, 1, "park", "PARK"),
         ("door_study_room", 23, 26, "study_room", "STUDY ROOMS"),
+        ("door_greenhouse", green_door[0], green_door[1], "greenhouse", "GREENHOUSE"),
+        ("door_skyline_terrace", 36, 13, "skyline_terrace", "TERRACE"),
     )
     for name, tx, ty, zone, label in doors:
         m.set_decor(tx, ty, -1)
@@ -421,81 +457,153 @@ def add_exit(m, tx, ty, target, label):
 
 
 def build_library():
-    """Quiet zone: focus pods along the walls, a reading nook, stacks (03)."""
-    W, H = 24, 18
+    """
+    Quiet zone (03).
+
+    Rebuilt in Phase 6. The first pass was one room with two shelf runs and a
+    carpet slab in the middle, which read as an empty hall rather than a
+    library. This version gives it the thing real libraries have and the old
+    one did not: circulation. A central spine runs door to back wall, stacks
+    sit either side of it in browsable aisles, and the south end is a reading
+    room you arrive into rather than walk past.
+    """
+    W, H = 28, 20
     m = MapBuilder(W, H, seed=11)
-    interior(m, W, H, WOOD_FLOOR, windows=(4, 5, 11, 12, 18, 19))
+    interior(m, W, H, WOOD_FLOOR, windows=(5, 6, 13, 14, 21, 22))
 
-    # carpeted reading area in the centre
-    m.fill_ground(8, 8, 15, 13, CARPET)
-    m.set_ground(11, 10, RUG)
-    m.set_ground(12, 10, RUG)
+    # low shelving under the windows along the back wall
+    for x in range(2, W - 2):
+        if x not in (13, 14):          # keep the spine clear
+            m.set_decor(x, 2, SHELF_LOW)
 
-    # stacks: two runs of shelving with an aisle between
-    for y in (4, 5):
-        for x in range(3, 10):
+    # Stacks: three runs each side, one tile deep with a walkable aisle
+    # between, and a two-tile spine down the middle at x=13..14.
+    for y in (4, 6, 8):
+        for x in range(2, 12):
             m.set_decor(x, y, BOOKSHELF)
-    for y in (4, 5):
-        for x in range(14, 21):
+        for x in range(16, W - 2):
             m.set_decor(x, y, BOOKSHELF)
-    for x in range(3, 21, 4):
-        m.set_decor(x, 15, SHELF_LOW)
 
-    m.set_decor(2, 8, CHALKBOARD)
+    # reading room in the south half
+    m.fill_ground(3, 12, W - 4, 17, CARPET)
+    m.fill_ground(12, 12, 15, 16, RUG)
 
-    # objects
-    m.add_point("spawn", "spawn", 12, 16)
-    for i, x in enumerate((4, 7, 16, 19), start=1):
-        m.add_object("focus_pod_%d" % i, "focus_pod", x, 8, True, {
-            "text": "A focus pod. Sitting here starts a timer and tells the room "
-                    "you are working.",
+    # issue desk by the entrance
+    for x in range(2, 7):
+        m.set_decor(x, 16, COUNTER_TOP)
+        m.set_decor(x, 17, COUNTER_FRONT)
+
+    # lamps at the reading-room corners, and a noticeboard on the west wall
+    m.set_decor(2, 12, LAMP)
+    m.set_decor(W - 3, 12, LAMP)
+    m.set_decor(1, 10, CHALKBOARD)
+
+    # ---- objects ----------------------------------------------------------
+    m.add_point("spawn", "spawn", 14, 17)
+
+    # Pods face the aisles rather than the wall, in the quiet band between the
+    # stacks and the reading room.
+    for i, x in enumerate((4, 8, 19, 23), start=1):
+        m.add_object("focus_pod_%d" % i, "focus_pod", x, 10, True, {
+            "text": "A focus pod with a lamp and a power socket.|"
+                    "Sitting here starts a timer and tells the room you are working.",
         })
-    m.add_object("reading_nook", "reading_nook", 12, 12, True, {
-        "text": "A deep armchair under a warm lamp.|No timer, no goal. Just somewhere "
-                "to sit near people.",
+
+    m.add_object("reading_nook", "reading_nook", 13, 14, True, {
+        "text": "A deep armchair on a worn rug, angled away from the door.|"
+                "No timer, no goal. Just somewhere to sit near people.",
     })
-    m.add_object("npc_librarian", "npc", 20, 12, True, {
+    for i, (x, y) in enumerate(((7, 13), (20, 13), (7, 16), (20, 16)), start=1):
+        m.add_object("reading_seat_%d" % i, "seat", x, y, True, {
+            "text": "A reading chair at a shared table.",
+        })
+    m.add_object("npc_librarian", "npc", 4, 15, True, {
         "text": "Keep it down and you can stay as long as you like.|"
-                "The pods on the left get the afternoon sun, if that matters to you.",
+                "Pods are past the stacks. The armchair is first come, first served.",
     })
-    add_exit(m, 12, 17, "town_square", "OUT")
+    add_exit(m, 14, 19, "town_square", "OUT")
     return m
 
 
 def build_cafe():
-    """Social zone: jukebox centrepiece, counter, booths and tables (03)."""
-    W, H = 24, 18
-    m = MapBuilder(W, H, seed=13)
-    interior(m, W, H, TILE_FLOOR, windows=(3, 4, 19, 20))
+    """
+    Social zone (03).
 
-    # service counter along the north wall
-    for x in range(3, 12):
+    Rebuilt in Phase 6. The first pass was a counter and four loose booths in a
+    square room, which gave people nowhere in particular to be. A cafe works by
+    having several kinds of place to sit — a bar you perch at, booths you hide
+    in, a long table you end up sharing — so this version lays out three, and
+    puts the counter where you have to walk past it.
+    """
+    W, H = 28, 20
+    m = MapBuilder(W, H, seed=13)
+    interior(m, W, H, TILE_FLOOR, windows=(4, 5, 13, 14, 22, 23))
+
+    # ---- the counter, dead ahead as you come in ---------------------------
+    for x in range(3, 14):
         m.set_decor(x, 2, COUNTER_TOP)
         m.set_decor(x, 3, COUNTER_FRONT)
-    m.fill_ground(3, 1, 11, 1, KITCHEN_TILE)
+    m.fill_ground(3, 1, 13, 1, KITCHEN_TILE)
+    # a gap at the end so staff can get out, and the pastry case beside it
+    m.set_decor(13, 3, -1)
 
-    # warm wooden terrace on the east side
-    m.fill_ground(15, 5, 21, 13, WOOD_FLOOR)
-    m.fill_ground(4, 12, 11, 15, TILE_FLOOR_ALT)
+    # ---- floor zones ------------------------------------------------------
+    # Warm boards down the whole window side, terrazzo through the middle, and
+    # rugs under each seating group so the room reads as three places to sit
+    # rather than one hall with furniture in it.
+    m.fill_ground(17, 4, W - 3, H - 3, WOOD_FLOOR)
+    m.fill_ground(9, 9, 14, 13, RUG)
+    m.fill_ground(3, 14, 8, 17, RUG)
 
-    m.add_point("spawn", "spawn", 12, 16)
-    m.add_object("jukebox", "jukebox", 12, 3, True, {
+    # ---- planting, which is most of what makes a cafe feel lived in -------
+    for px, py in ((2, 6), (2, 11), (15, 6), (15, 17), (W - 3, 4), (W - 3, 17), (8, 7), (16, 12)):
+        m.set_decor(px, py, PLANTER)
+
+    # low shelf of mugs and books against the west wall
+    for y in range(8, 12):
+        m.set_decor(1, y, SHELF_LOW)
+
+    # ---- objects ----------------------------------------------------------
+    m.add_point("spawn", "spawn", 14, 17)
+
+    # 03: "Order a drink - cosmetic-only interaction". Placed at the counter
+    # itself rather than on the barista, so ordering is a thing you do at the
+    # bar and talking to the barista stays a separate, purely social act.
+    m.add_object("drink_counter", "drink_counter", 7, 4, True, {
+        "text": "The counter. Someone has chalked today's list above the machine.",
+    })
+    m.add_object("counter_barista", "npc", 11, 4, True, {
+        "text": "Long day? Same.|Drinks are free, they are also imaginary. "
+                "Order at the counter, take your time.",
+    })
+    m.add_object("jukebox", "jukebox", 20, 3, True, {
         "text": "A jukebox, wired to every speaker in the room.|"
                 "Whatever is playing, everyone here hears the same thing.",
     })
-    m.add_object("counter_barista", "npc", 6, 4, True, {
-        "text": "Long day? Same.|Drinks are free, they are also imaginary. "
-                "Take your time.",
-    })
-    for i, (x, y) in enumerate(((16, 6), (20, 6), (16, 11), (20, 11)), start=1):
+
+    # perch seats along the counter
+    for i, x in enumerate((4, 6, 8, 10), start=1):
+        m.add_object("stool_%d" % i, "seat", x, 5, True, {
+            "text": "A stool at the counter. Good for one drink, bad for three hours.",
+        })
+    # booths against the windows
+    for i, (x, y) in enumerate(((19, 7), (24, 7), (19, 13), (24, 13)), start=1):
         m.add_object("booth_%d" % i, "seat", x, y, True, {
             "text": "A booth by the window. Comfortable enough to lose an hour in.",
         })
-    for i, (x, y) in enumerate(((5, 13), (9, 13)), start=1):
-        m.add_object("table_%d" % i, "seat", x, y, True, {
-            "text": "A small table with two chairs.",
+    # the long shared table, central so you walk into it on the way in
+    for i, (x, y) in enumerate(((10, 10), (12, 10), (10, 12), (12, 12)), start=1):
+        m.add_object("communal_%d" % i, "seat", x, y, True, {
+            "text": "The long table. You will end up talking to whoever sits down.",
         })
-    add_exit(m, 12, 17, "town_square", "OUT")
+
+    # a quieter pair of small tables in the south-west corner
+    for i, (x, y) in enumerate(((4, 15), (7, 15)), start=1):
+        m.add_object("corner_table_%d" % i, "seat", x, y, True, {
+            "text": "A two-seater in the corner, away from the machine.",
+        })
+
+    add_exit(m, 14, 19, "town_square", "OUT")
     return m
 
 
@@ -637,6 +745,100 @@ def build_study_room():
     return m
 
 
+def build_skyline_terrace():
+    """
+    Rooftop terrace at dusk (Phase 6).
+
+    Deliberately the least dense zone after the Park: a deck, a rail, the city
+    below, and speakers. 03 wants at least one space that asks nothing of you,
+    and the Park is that space in daylight; this is the same idea after dark.
+    """
+    W, H = 24, 17
+    m = MapBuilder(W, H, seed=61)
+
+    m.fill_ground(0, 0, W - 1, H - 1, ROOF_DECK)
+    # the city beyond, then the rail you cannot cross
+    for x in range(W):
+        for y in (0, H - 1):
+            m.set_decor(x, y, SKYLINE)
+    for y in range(H):
+        for x in (0, W - 1):
+            m.set_decor(x, y, SKYLINE)
+    m.outline_decor(1, 1, W - 2, H - 2, ROOF_RAIL)
+
+    # festoon lighting strung across the deck
+    for x in range(3, W - 3, 4):
+        m.set_ground(x, 3, STRING_LIGHT)
+        m.set_ground(x, H - 4, STRING_LIGHT)
+
+    # planted edge softening the north rail, and a small stage
+    for x in range(4, W - 4, 3):
+        m.set_decor(x, 2, PLANTER)
+    m.fill_ground(10, 6, 13, 8, STAGE_FLOOR)
+
+    m.add_point("spawn", "spawn", 12, 13)
+    m.add_object("terrace_speakers", "jukebox", 12, 7, True, {
+        "text": "Speakers on a stand, wired to the same queue as everywhere else.|"
+                "Up here it mostly competes with the traffic.",
+    })
+    for i, (x, y) in enumerate(((5, 6), (18, 6), (5, 11), (18, 11)), start=1):
+        m.add_object("lounger_%d" % i, "seat", x, y, True, {
+            "text": "A low chair facing out over the city. Still warm from the day.",
+        })
+    m.add_object("npc_smoker", "npc", 8, 10, True, {
+        "text": "Best view in town and everyone is downstairs arguing about music.|"
+                "Their loss. Stay as long as you like.",
+    })
+    add_exit(m, 12, 15, "town_square", "DOWN")
+    return m
+
+
+def build_greenhouse():
+    """
+    A working glasshouse (Phase 6).
+
+    The Library is quiet because quiet is enforced; this is quiet because
+    nobody raises their voice around plants. Same voice default, different
+    reason — which is what stops it being a reskin of the Library.
+    """
+    W, H = 22, 16
+    m = MapBuilder(W, H, seed=67)
+
+    m.fill_ground(0, 0, W - 1, H - 1, GARDEN_PATH)
+    m.outline_decor(0, 0, W - 1, H - 1, GLASS_WALL)
+
+    # three long planting beds, each with a gap so both sides stay reachable
+    for by in (3, 6, 9):
+        for x in range(3, W - 3):
+            m.set_decor(x, by, SOIL_BED)
+        m.set_decor(W // 2, by, -1)
+
+    for fx, fy in ((2, 5), (2, 8), (W - 3, 5), (W - 3, 8)):
+        m.set_decor(fx, fy, FERN)
+
+    # a water channel down the spine, purely for texture
+    for y in range(2, H - 3):
+        if m.is_free(W // 2, y):
+            m.set_ground(W // 2, y, POND_EDGE)
+
+    m.add_point("spawn", "spawn", 11, 13)
+    for i, (x, y) in enumerate(((4, 12), (17, 12)), start=1):
+        m.add_object("potting_bench_%d" % i, "focus_pod", x, y, True, {
+            "text": "A potting bench, cleared of pots.|"
+                    "Working here tells the room you are working, same as the Library.",
+        })
+    m.add_object("garden_nook", "reading_nook", 11, 11, True, {
+        "text": "A bench under the vines. Warm, and slightly too humid.|"
+                "No timer. Nothing is counted here.",
+    })
+    m.add_object("npc_grower", "npc", 7, 12, True, {
+        "text": "Tomatoes on the left, ambition on the right.|"
+                "Sit anywhere. The plants have no opinion.",
+    })
+    add_exit(m, 11, 15, "town_square", "OUT")
+    return m
+
+
 ZONE_BUILDERS = {
     "town_square": build_town_square,
     "library": build_library,
@@ -644,6 +846,8 @@ ZONE_BUILDERS = {
     "arcade": build_arcade,
     "park": build_park,
     "study_room": build_study_room,
+    "skyline_terrace": build_skyline_terrace,
+    "greenhouse": build_greenhouse,
 }
 
 

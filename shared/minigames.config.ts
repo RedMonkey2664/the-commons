@@ -60,6 +60,24 @@ export const MINIGAMES: MinigameConfig[] = [
     maxPlayers: 1,
     blurb: 'The jukebox tracks, played back at you.',
   },
+  {
+    id: 'word_rush',
+    displayName: 'Word Rush',
+    cabinetSpriteKey: 'obj_cabinet_lit',
+    sceneKey: 'WordRushScene',
+    minPlayers: 1,
+    maxPlayers: 4,
+    blurb: 'Seven letters. Longest word wins the round.',
+  },
+  {
+    id: 'stack_tower',
+    displayName: 'Stack Tower',
+    cabinetSpriteKey: 'obj_cabinet_lit',
+    sceneKey: 'StackTowerScene',
+    minPlayers: 1,
+    maxPlayers: 1,
+    blurb: 'Drop the block. Miss, and the tower gets thinner.',
+  },
 ];
 
 export function getMinigame(id: string): MinigameConfig | undefined {

@@ -16,6 +16,7 @@ import { COLORS, TYPOGRAPHY, hex } from '@commons/shared';
 import {
   ASSET_KEYS,
   generateCharacterSheet,
+  generateDrinkSprites,
   generateInteractableSprites,
   generateObjectSprites,
   generateTileset,
@@ -129,6 +130,7 @@ export class BootScene extends Phaser.Scene {
           // generateAllPlaceholderArt() covers them for isolation-booted zones,
           // which masks the omission everywhere except the real boot path.
           generateInteractableSprites(this);
+          generateDrinkSprites(this);
         },
       },
       {

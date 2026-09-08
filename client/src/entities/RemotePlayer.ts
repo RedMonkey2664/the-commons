@@ -16,7 +16,7 @@ import Phaser from 'phaser';
 import type { Direction, PlayerStatus, TileCoord } from '@commons/shared';
 import { CHAT_LIMITS, COLORS, NETWORK, TYPOGRAPHY, hex } from '@commons/shared';
 import { registerCharacterAnimations, idleFrameIndex, walkAnimKey } from '../art/characterAnimations';
-import { ASSET_KEYS } from '../art/placeholderArt';
+import { ASSET_KEYS, drinkTextureKey } from '../art/placeholderArt';
 import { tileToWorld } from '../systems/GridMovement';
 
 export interface RemotePlayerOptions {
@@ -40,6 +40,12 @@ export class RemotePlayer {
 
   private readonly nameplate: Phaser.GameObjects.Text;
   private readonly statusIcon: Phaser.GameObjects.Arc;
+  /**
+   * The drink they are holding (03). Created lazily and destroyed when they put
+   * it down, so the overwhelming majority of players cost nothing extra.
+   */
+  private drinkIcon?: Phaser.GameObjects.Image;
+  drink = '';
   private moveTween?: Phaser.Tweens.Tween;
   private bubble?: Phaser.GameObjects.Text;
   private bubbleTimer?: Phaser.Time.TimerEvent;
@@ -165,6 +171,27 @@ export class RemotePlayer {
     if (!this.moveTween) this.showIdleFrame();
   }
 
+  /** Show, swap, or clear the mug above this player's head. */
+  applyDrink(drink: string): void {
+    this.drink = drink;
+
+    if (!drink) {
+      this.drinkIcon?.destroy();
+      this.drinkIcon = undefined;
+      return;
+    }
+
+    const key = drinkTextureKey(drink);
+    if (!this.scene.textures.exists(key)) return;
+
+    if (!this.drinkIcon) {
+      this.drinkIcon = this.scene.add.image(this.sprite.x - 14, this.sprite.y - 34, key).setOrigin(0.5, 1);
+    } else {
+      this.drinkIcon.setTexture(key);
+    }
+    this.syncAttachments();
+  }
+
   applyStatus(status: PlayerStatus): void {
     this.status = status;
     const color = {
@@ -187,6 +214,7 @@ export class RemotePlayer {
     this.sprite.setDepth(this.sprite.y);
     this.nameplate.setPosition(this.sprite.x, this.sprite.y - 34).setDepth(this.sprite.y + 400);
     this.statusIcon.setPosition(this.sprite.x + 10, this.sprite.y - 32).setDepth(this.sprite.y + 401);
+    this.drinkIcon?.setPosition(this.sprite.x - 15, this.sprite.y - 30).setDepth(this.sprite.y + 401);
     this.bubble?.setPosition(this.sprite.x, this.sprite.y - 54).setDepth(this.sprite.y + 500);
   }
 
@@ -202,5 +230,6 @@ export class RemotePlayer {
     this.sprite.destroy();
     this.nameplate.destroy();
     this.statusIcon.destroy();
+    this.drinkIcon?.destroy();
   }
 }

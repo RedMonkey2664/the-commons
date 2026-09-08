@@ -7,7 +7,15 @@
 
 import type Phaser from 'phaser';
 import { TownSquareScene } from './TownSquareScene';
-import { ArcadeScene, CafeScene, LibraryScene, ParkScene, StudyRoomScene } from './zones';
+import {
+  ArcadeScene,
+  CafeScene,
+  GreenhouseScene,
+  LibraryScene,
+  ParkScene,
+  SkylineTerraceScene,
+  StudyRoomScene,
+} from './zones';
 
 export const ZONE_SCENE_CLASSES: Array<new () => Phaser.Scene> = [
   TownSquareScene,
@@ -16,6 +24,8 @@ export const ZONE_SCENE_CLASSES: Array<new () => Phaser.Scene> = [
   ArcadeScene,
   ParkScene,
   StudyRoomScene,
+  SkylineTerraceScene,
+  GreenhouseScene,
 ];
 
 /** The zone the game boots into. */

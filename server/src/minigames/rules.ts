@@ -18,8 +18,9 @@
  */
 
 import type { TriviaQuestion } from '@commons/shared';
-import { REACTION_TAP_RULES, TRIVIA_RULES } from '@commons/shared';
+import { REACTION_TAP_RULES, TRIVIA_RULES, WORD_RUSH_RULES } from '@commons/shared';
 import { TRIVIA_QUESTIONS } from './triviaQuestions.js';
+import { WORD_PUZZLES } from './wordPuzzles.js';
 
 export interface RoundCue {
   /** Ms after the round starts to broadcast this. */
@@ -226,7 +227,81 @@ class ReactionRules implements MinigameRules {
 const RULES_FACTORIES: Record<string, () => MinigameRules> = {
   trivia_blitz: () => new TriviaRules(),
   reaction_tap: () => new ReactionRules(),
+  word_rush: () => new WordRushRules(),
 };
+
+// ---------------------------------------------------------------------------
+// Word Rush
+// ---------------------------------------------------------------------------
+
+interface WordSecret {
+  /** Accepted words for this rack, lowercase. */
+  words: string[];
+  /** The longest available word, revealed afterwards. */
+  best: string;
+}
+
+class WordRushRules implements MinigameRules {
+  readonly id = 'word_rush';
+  readonly roundsPerGame = WORD_RUSH_RULES.rounds;
+  readonly countdownMs = WORD_RUSH_RULES.countdownMs;
+  readonly revealMs = WORD_RUSH_RULES.revealMs;
+  readonly lobbyWaitMs = WORD_RUSH_RULES.lobbyWaitMs;
+
+  private puzzles = WORD_PUZZLES;
+
+  prepare(): void {
+    // Shuffled per game so the same five racks do not come round every time.
+    this.puzzles = shuffle([...WORD_PUZZLES]);
+  }
+
+  buildRound(index: number): BuiltRound | null {
+    if (index >= this.roundsPerGame) return null;
+    const puzzle = this.puzzles[index % this.puzzles.length];
+    if (!puzzle) return null;
+
+    const words = [...new Set(puzzle.words.map((w) => w.toLowerCase()))];
+    const best = words.reduce((a, b) => (b.length > a.length ? b : a), '');
+
+    return {
+      // The rack is public; the word list is NOT. Sending it would turn the
+      // game into "read the answers off the network tab".
+      payload: { letters: puzzle.letters, minLength: WORD_RUSH_RULES.minWordLength },
+      secret: { words, best } satisfies WordSecret,
+      durationMs: WORD_RUSH_RULES.roundMs,
+    };
+  }
+
+  isValidAnswer(_secret: unknown, answer: unknown): boolean {
+    const word = (answer as { word?: unknown } | null)?.word;
+    // Shape only. A wrong word is still a submitted answer — it uses up your
+    // one guess, which is what makes committing to a short word a real choice.
+    return typeof word === 'string' && word.trim().length > 0 && word.length <= 24;
+  }
+
+  score(secret: unknown, answer: unknown, elapsedMs: number, durationMs: number): ScoredAnswer {
+    const { words } = secret as WordSecret;
+    const word = String((answer as { word?: unknown })?.word ?? '')
+      .trim()
+      .toLowerCase();
+
+    if (word.length < WORD_RUSH_RULES.minWordLength) return { correct: false, points: 0 };
+    if (!words.includes(word)) return { correct: false, points: 0 };
+
+    const base = word.length * word.length * WORD_RUSH_RULES.pointsPerLetter;
+    const remaining = Math.max(0, 1 - elapsedMs / Math.max(1, durationMs));
+    const bonus = Math.round(WORD_RUSH_RULES.maxSpeedBonus * remaining);
+    return { correct: true, points: base + bonus };
+  }
+
+  reveal(secret: unknown): unknown {
+    const { best, words } = secret as WordSecret;
+    // The best word plus a handful of others, so a player who found nothing
+    // learns what was actually in there rather than just losing.
+    const examples = words.filter((w) => w !== best && w.length >= 4).slice(0, 5);
+    return { best, examples };
+  }
+}
 
 export function rulesFor(minigameId: string): MinigameRules | undefined {
   return RULES_FACTORIES[minigameId]?.();
