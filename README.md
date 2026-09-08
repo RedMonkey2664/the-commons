@@ -9,18 +9,20 @@ The point is **presence, not progression** — see
 
 ---
 
-## Status: Phase 2 complete
+## Status: Phase 3 mostly complete
 
 | Phase | Scope | State |
 |---|---|---|
 | **0** | Single-player skeleton: Town Square, WASD grid movement, collision, camera | **Done** — 23/23 smoke checks |
 | **1** | Colyseus server, multiplayer sync in Town Square | **Done** — 26/26 sync checks |
 | **2** | All zones + zone transitions + NPC dialogue + friends list | **Done** — 42/42 world checks |
-| 3 | Supabase auth, persistence, arcade minigames, text chat | Not started |
+| **3** | Persistence, arcade minigames, study tracking, text chat | **Done** — 16/16 arcade checks |
+| 3a | Supabase auth + real accounts | **Blocked** — needs credentials, see below |
 | 4 | Jukebox + voice chat | Not started |
 | 5 | Real pixel art, remaining minigames, polish | Not started |
 
-**Playable right now:** type a name and walk the whole town. Six zones —
+**Playable right now:** type a name and walk the whole town, play the arcade,
+and talk to whoever is in the room with you. Six zones —
 Town Square, Library, Cafe, Arcade, Park and Study Rooms — all connected by
 doors you walk onto, with a fade transition and an arrival point that puts you
 back at the door you came out of. Grid-based WASD movement with tile collision,
@@ -29,9 +31,15 @@ a dialogue box; "!" bubbles mark anything interactable. Sit at a library focus
 pod and your status becomes `studying` — no start button, just sitting down.
 Esc opens the friends panel showing who is in the room with you.
 
+The Arcade has two working cabinets: **Memory Match** (solo) and **Trivia
+Blitz** (up to four players, scored by the server). Scores persist and come back
+as a leaderboard. Sitting at a focus pod accrues **study time**, timed by the
+server and written when you stand up. **Enter** opens chat — messages appear as
+bubbles over the speaker and in a log panel.
+
 Open a second browser and you see each other live, with nameplates, moving at
-the same 130ms-per-tile cadence, walking between zones, and each other's status
-updating as you sit and stand.
+the same 130ms-per-tile cadence, walking between zones, chatting, and each
+other's status updating as you sit and stand.
 
 If the server is down the town still works — you just play it alone.
 
@@ -68,6 +76,7 @@ python tools/generate_placeholder_maps.py   # regenerate placeholder Tiled maps
 node tools/phase0_smoke.mjs  # single-player smoke test (no server needed)
 node tools/phase1_sync.mjs   # two-client multiplayer sync test (boots server + client)
 node tools/phase2_world.mjs   # walks every zone door and back (single-player)
+node tools/phase3_arcade.mjs  # arcade, chat and persistence
 node tools/capture_screens.mjs # screenshot the loading, title and world screens
 ```
 
@@ -81,6 +90,7 @@ Both need `npx playwright install chromium` once. Add `--headed` to watch.
 |---|---|
 | `W` `A` `S` `D` (or arrows) | Move one tile |
 | `Space` (or `Enter`) | Interact / advance dialogue |
+| `Enter` | Chat (Enter sends, Esc cancels) |
 | `Esc` | Friends panel |
 
 Tap a direction you aren't facing to **turn in place**; hold it to walk.
@@ -245,6 +255,62 @@ without code changes.
 
 ---
 
+## Persistence and accounts
+
+Everything above the `Store` interface in `shared/persistence.ts` is written
+once and does not know which implementation it is talking to. The server picks
+one at boot and logs the choice:
+
+| `DATABASE_URL` | Store | State |
+|---|---|---|
+| unset | `JsonStore` — file-backed at `server/.data/store.json` | **Working.** Durable across restarts |
+| set | `PostgresStore` — Supabase | **Untested.** Written, never run against a real database |
+
+`JsonStore` is not a stub: debounced, serialized writes with write-then-rename,
+so a crash cannot truncate it. Study time, high scores and friendships are real
+from the first run with no database at all.
+
+### Turning on Supabase
+
+1. Create a Supabase project.
+2. Apply the schema: `psql "$DATABASE_URL" -f server/src/db/schema.sql`
+   (or paste it into the SQL editor).
+3. Put `DATABASE_URL` in `server/.env` and restart.
+
+The server switches automatically. If the connection fails it falls back to the
+JSON store with a loud warning rather than refusing to boot — friends should
+still be able to hang out through a database outage.
+
+**What is still missing:** real *accounts*. Identity today is a stable id
+generated in `localStorage`, which is enough to accumulate study time and scores
+against a person but is not a security boundary — anyone can edit their own.
+Supabase Auth replaces where that id comes from; every consumer keeps working
+unchanged because they only ever ask the session for an id.
+
+---
+
+## Arcade
+
+Adding a minigame is three things and nothing else:
+
+1. A scene extending `BaseMinigameScene`.
+2. An entry in `shared/minigames.config.ts`.
+3. A line in `client/src/scenes/minigames/registry.ts`.
+
+The Arcade builds one cabinet per config entry at runtime and launches by scene
+key; it never learns what any game does. The base class owns presentation,
+Esc-to-quit, score reporting and the leaderboard, so a minigame implements only
+its own rules.
+
+**Solo games** (Memory Match) score client-side and submit over HTTP.
+**Multiplayer games** (Trivia Blitz) run their round in a Colyseus room: the
+server owns the question bank, the clock and the scoring, and clients receive
+questions with the answer *stripped*. The solo score endpoint refuses
+submissions for multiplayer games outright, so that rule cannot be bypassed by
+posting a result.
+
+---
+
 ## Known deviations from the specs
 
 Flagged rather than made silently:
@@ -261,6 +327,8 @@ Flagged rather than made silently:
 | 10: zone fade hold | Added `holdMs: 80` | Spec says "brief hold" without a number |
 | 04: facing cue | Eyes rather than an arrow | Spec permits "colored rectangle + directional arrow"; eyes read better at 16×32 |
 | 05 | Players don't collide with each other | Not specified either way. Blocking is grief-able in a hangout game and can trap someone in a doorway; flagged as an open question |
+| 08: Phase 3 | Real accounts not delivered | Supabase needs credentials that were not available. Built against a `Store` interface so switching is config, not a refactor |
+| 02: Postgres | `PostgresStore` is untested | No database was available; the JSON store is exercised by the suites instead. Flagged at the top of the file |
 
 ## Tooling gaps
 

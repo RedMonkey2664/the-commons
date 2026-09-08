@@ -66,7 +66,12 @@ export interface ScoreResult {
   best: number;
   /** True when the submitted score beat their previous best. */
   improved: boolean;
-  /** 1-based position on the board, or 0 if not in the top slice. */
+  /**
+   * True 1-based position across ALL players, not a position within some top-N
+   * slice. Both stores must agree on this: returning 0 for "outside the top
+   * 100" in one and a real rank in the other made the same call mean different
+   * things depending on configuration.
+   */
   rank: number;
 }
 

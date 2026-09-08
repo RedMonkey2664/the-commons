@@ -114,6 +114,13 @@ export class TriviaBlitzScene extends BaseMinigameScene {
         displayName: session.displayName ?? 'Wanderer',
         userId: session.userId,
       });
+      // Quitting during the join leaves this scene stopped but the join still
+      // completing — which would hold a maxClients slot in a room nobody is
+      // watching, and write to destroyed text objects.
+      if (!this.scene.isActive()) {
+        void room.leave().catch(() => undefined);
+        return;
+      }
       this.room = room;
 
       room.onMessage(MINIGAME_SERVER_MESSAGE.round, (payload: RoundPayload) => {
@@ -136,6 +143,7 @@ export class TriviaBlitzScene extends BaseMinigameScene {
         `waiting for players…\n\nstarting in up to ${Math.round(TRIVIA_RULES.lobbyWaitMs / 1000)}s`,
       );
     } catch (error) {
+      if (!this.scene.isActive()) return;
       // Honest failure. This game is server-scored by design, so there is no
       // meaningful offline mode to fall back to.
       this.promptText.setText(

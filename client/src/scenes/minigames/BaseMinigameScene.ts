@@ -75,14 +75,12 @@ export abstract class BaseMinigameScene extends Phaser.Scene implements Minigame
 
     this.playfield = this.add.container(0, 0).setDepth(2);
 
-    this.layout();
     this.scale.on(Phaser.Scale.Events.RESIZE, this.layout, this);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.scale.off(Phaser.Scale.Events.RESIZE, this.layout, this);
     });
 
     this.input.keyboard?.on('keydown-ESC', () => this.quit());
-
     this.cameras.main.fadeIn(UI.panel.slideMs, 0, 0, 0);
 
     const players: PlayerRef[] = [
@@ -93,6 +91,11 @@ export abstract class BaseMinigameScene extends Phaser.Scene implements Minigame
       },
     ];
     this.onStart(players);
+
+    // AFTER onStart, not before. onLayout() positions whatever the subclass
+    // just built, and RESIZE does not fire on scene launch — laying out first
+    // left every card and label stacked at (0,0) until the window was resized.
+    this.layout();
   }
 
   // -- MinigameScene contract ----------------------------------------------
@@ -121,8 +124,12 @@ export abstract class BaseMinigameScene extends Phaser.Scene implements Minigame
     this.statusText.setText('SPACE to return');
 
     const board = await this.submitAndFetchBoard(myScore);
-    this.showResults(summary, myScore, board);
 
+    // Quitting during that round trip destroys these objects. The score is
+    // already submitted, so there is nothing left to do but stop.
+    if (!this.scene.isActive()) return;
+
+    this.showResults(summary, myScore, board);
     this.input.keyboard?.once('keydown-SPACE', () => this.quit());
   }
 

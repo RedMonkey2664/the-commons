@@ -165,6 +165,15 @@ export class MultiplayerSystem {
     this.remotes.get(sessionId)?.say(text);
   }
 
+  /**
+   * The server rejected an intent.
+   *
+   * Subject to the same staleness rule as reconcileLocal: a correction
+   * describes the world as of `message.seq`. If we have sent intents since, its
+   * position is already out of date and snapping to it would rubber-band the
+   * player backwards — which a burst hitting the rate limiter can trigger
+   * during entirely legitimate play.
+   */
   handleCorrection(message: CorrectionMessage): void {
     if (message.seq < this.network.lastSentSeq) return;
     this.snapLocalTo({ x: message.x, y: message.y });

@@ -218,7 +218,8 @@ export class JsonStore implements Store {
     this.schedule();
 
     const best = Math.max(previousBest, score.score);
-    const board = await this.topScores(score.minigameId, 100);
+    // Ranked against everyone, not a top-N slice — see ScoreResult.rank.
+    const board = await this.topScores(score.minigameId, Number.MAX_SAFE_INTEGER);
     const rank = board.findIndex((s) => s.userId === score.userId) + 1;
     return { best, improved, rank };
   }

@@ -86,7 +86,10 @@ export class MinigameRoom extends Room<MinigameState> {
     });
     this.onMessage(MINIGAME_CLIENT_MESSAGE.forfeit, (client) => {
       // 11 allows a graceful forfeit; leaving mid-round is not a penalty.
-      void this.onLeave(client);
+      // client.leave() so the socket actually closes and onLeave runs once —
+      // calling onLeave directly leaves the connection open, keeps the room
+      // alive, and then runs onLeave a second time when the socket does drop.
+      client.leave();
     });
 
     console.log(`[minigame] room created: ${minigameId} (${this.roomId})`);
@@ -138,6 +141,11 @@ export class MinigameRoom extends Room<MinigameState> {
   private begin(): void {
     if (this.state.phase !== 'lobby') return;
     this.clearTimers();
+
+    // Stop matchmaking into a game already underway. Without this a late
+    // joinOrCreate lands in a running round, their `ready` is ignored, and they
+    // finish in the standings on zero having never seen a question.
+    void this.lock();
 
     this.questions = pickQuestions(TRIVIA_RULES.questionsPerGame);
     this.state.roundIndex = 0;

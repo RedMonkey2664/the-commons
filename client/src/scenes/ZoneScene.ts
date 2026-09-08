@@ -92,9 +92,17 @@ export abstract class ZoneScene extends Phaser.Scene {
   create(): void {
     // Returning from a paused minigame resumes this scene rather than
     // recreating it, so control has to be handed back explicitly.
-    this.events.on(Phaser.Scenes.Events.RESUME, () => {
+    //
+    // Removed on shutdown: Phaser only clears scene emitters on destroy, and
+    // create() runs again on every visit, so without this the handler stacks up
+    // once per time the player walks into the zone.
+    const onResume = () => {
       this.player?.setBlocked(false);
       this.controls?.reset();
+    };
+    this.events.on(Phaser.Scenes.Events.RESUME, onResume);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.events.off(Phaser.Scenes.Events.RESUME, onResume);
     });
 
     // Booting a zone directly (isolation testing) must not depend on BootScene.

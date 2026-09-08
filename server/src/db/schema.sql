@@ -14,9 +14,14 @@ create table if not exists users (
   created_at    timestamptz not null default now()
 );
 
--- Case-insensitive uniqueness: "Alex" and "alex" are the same person to a
--- player typing a name into the friends panel.
-create unique index if not exists users_display_name_lower_idx
+-- Lookup index, deliberately NOT unique.
+--
+-- Identity is `id`; display names are chosen freely and collide constantly —
+-- two people both landing on the default "Wanderer" is the normal case, not an
+-- error. A unique index here made the second one fail to insert, which then
+-- broke every study-time and score row for them via the foreign key.
+-- findUserByName returns the first match, which is only used for friend search.
+create index if not exists users_display_name_lower_idx
   on users (lower(display_name));
 
 -- Friendships are stored one row per DIRECTION (05, mutual-accept model).

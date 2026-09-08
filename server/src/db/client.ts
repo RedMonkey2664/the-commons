@@ -29,6 +29,9 @@ export async function initStore(): Promise<Store> {
       console.log('[db] using Postgres');
       return store;
     } catch (error) {
+      // Release the half-open pool before falling back; otherwise its retry
+      // timers keep the process alive and reconnecting in the background.
+      await postgres.close().catch(() => undefined);
       // Falling back rather than exiting is deliberate: a database that is
       // briefly unreachable should degrade the game to local persistence, not
       // stop friends being able to hang out. The warning is loud on purpose.

@@ -219,25 +219,47 @@ try {
   s = await state(alpha);
   check('Memory Match launched over the paused Arcade', s.minigame === 'MemoryMatchScene');
 
-  // Solve it deterministically by flipping known pairs, rather than clicking
-  // blind: the point is that a completed run scores and persists, not that the
-  // harness can win a memory game.
-  const solved = await alpha.page.evaluate(async () => {
+  // The cards must be laid out before anything can be clicked. This assertion
+  // exists because an earlier version called scene.flip(index) directly, which
+  // passed happily while every card was stacked at (0,0) and the game was
+  // unplayable by hand.
+  const layout = await alpha.page.evaluate(() => {
+    const scene = window.__COMMONS__.game.scene.getScene('MemoryMatchScene');
+    const positions = scene.cards.map((c) => ({ x: c.container.x, y: c.container.y }));
+    const distinct = new Set(positions.map((p) => `${Math.round(p.x)},${Math.round(p.y)}`));
+    return { count: positions.length, distinct: distinct.size, first: positions[0] };
+  });
+  check('every card has its own position on screen',
+    layout.distinct === layout.count && layout.first.x > 0 && layout.first.y > 0,
+    JSON.stringify(layout));
+
+  // Solve it by CLICKING, at real screen coordinates — the same path a player
+  // takes. Pairs are looked up so the run is deterministic; the interaction is
+  // not simulated.
+  const pairOrder = await alpha.page.evaluate(() => {
     const scene = window.__COMMONS__.game.scene.getScene('MemoryMatchScene');
     const byFace = new Map();
     for (const card of scene.cards) {
       const list = byFace.get(card.faceIndex) ?? [];
-      list.push(card.index);
+      list.push({ x: card.container.x, y: card.container.y });
       byFace.set(card.faceIndex, list);
     }
-    for (const pair of byFace.values()) {
-      scene.flip(pair[0]);
-      scene.flip(pair[1]);
-      await new Promise((r) => setTimeout(r, 60));
+    return [...byFace.values()];
+  });
+
+  for (const pair of pairOrder) {
+    for (const point of pair) {
+      await alpha.page.mouse.click(point.x, point.y);
+      await alpha.page.waitForTimeout(90);
     }
+    await alpha.page.waitForTimeout(120);
+  }
+
+  const solved = await alpha.page.evaluate(() => {
+    const scene = window.__COMMONS__.game.scene.getScene('MemoryMatchScene');
     return { matches: scene.matches, pairs: scene.cards.length / 2 };
   });
-  check('every pair matched', solved.matches === solved.pairs, JSON.stringify(solved));
+  check('every pair matched by clicking', solved.matches === solved.pairs, JSON.stringify(solved));
 
   await alpha.page.waitForTimeout(1800);
 
