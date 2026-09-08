@@ -206,6 +206,20 @@ export class ZoneRoom extends Room<ZoneState> {
     console.log(`[zone] ${player?.displayName ?? client.sessionId} left ${this.zone.displayName}`);
   }
 
+  /**
+   * The user id this room recorded for a session, or undefined.
+   *
+   * Exposed so the voice token endpoint can derive identity from the room's own
+   * record rather than from whatever the HTTP caller claims to be.
+   */
+  userIdFor(sessionId: string): string | undefined {
+    return this.userIds.get(sessionId);
+  }
+
+  displayNameFor(sessionId: string): string | undefined {
+    return this.state.players.get(sessionId)?.displayName;
+  }
+
   override onDispose(): void {
     this.jukebox?.dispose();
     // Anyone still seated when the room dies keeps the time they accrued.

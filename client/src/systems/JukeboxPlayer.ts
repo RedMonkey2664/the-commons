@@ -51,6 +51,15 @@ export class JukeboxPlayer {
   private ctx?: AudioContext;
   private master?: GainNode;
   private noiseBuffer?: AudioBuffer;
+  /**
+   * Output stage for the CURRENT track.
+   *
+   * Every voice connects here rather than straight to master, so stopping a
+   * track can silence notes that were already scheduled ahead of it. Without
+   * this a skip leaves the previous pad and its bar-long hiss ringing over the
+   * next track for several seconds.
+   */
+  private trackGain?: GainNode;
 
   private track?: Track;
   /** AudioContext time corresponding to beat 0 of the track. */
@@ -117,6 +126,11 @@ export class JukeboxPlayer {
     this.stop(false);
     this.track = track;
 
+    // Fresh bus for this track; every voice below connects to it.
+    this.trackGain = this.ctx.createGain();
+    this.trackGain.gain.value = 1;
+    if (this.master) this.trackGain.connect(this.master);
+
     const secondsPerBeat = 60 / track.bpm;
     const offsetBeats = (offsetMs / 1000) / secondsPerBeat;
 
@@ -133,6 +147,20 @@ export class JukeboxPlayer {
       window.clearInterval(this.timer);
       this.timer = undefined;
     }
+
+    // Fade the whole track bus out fast, then drop it. Scheduled voices are
+    // still connected to it, so they go quiet with it instead of playing on.
+    const ctx = this.ctx;
+    const gain = this.trackGain;
+    this.trackGain = undefined;
+    if (ctx && gain) {
+      const now = ctx.currentTime;
+      gain.gain.cancelScheduledValues(now);
+      gain.gain.setValueAtTime(gain.gain.value, now);
+      gain.gain.linearRampToValueAtTime(0, now + 0.06);
+      window.setTimeout(() => gain.disconnect(), 400);
+    }
+
     if (clearTrack) this.track = undefined;
   }
 
@@ -181,7 +209,7 @@ export class JukeboxPlayer {
   private schedule(): void {
     const ctx = this.ctx;
     const track = this.track;
-    if (!ctx || !track || !this.master) return;
+    if (!ctx || !track || !this.trackGain) return;
 
     const secondsPerBeat = 60 / track.bpm;
     const horizon = ctx.currentTime + SCHEDULE_AHEAD_S;
@@ -228,7 +256,8 @@ export class JukeboxPlayer {
 
   private pad(frequency: number, when: number, duration: number): void {
     const ctx = this.ctx;
-    if (!ctx || !this.master) return;
+    const out = this.trackGain;
+    if (!ctx || !out) return;
 
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
@@ -242,14 +271,15 @@ export class JukeboxPlayer {
     gain.gain.linearRampToValueAtTime(0, when + duration);
 
     osc.connect(gain);
-    gain.connect(this.master);
+    gain.connect(out);
     osc.start(when);
     osc.stop(when + duration + 0.05);
   }
 
   private bass(frequency: number, when: number): void {
     const ctx = this.ctx;
-    if (!ctx || !this.master) return;
+    const out = this.trackGain;
+    if (!ctx || !out) return;
 
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
@@ -261,14 +291,15 @@ export class JukeboxPlayer {
     gain.gain.exponentialRampToValueAtTime(0.001, when + 0.55);
 
     osc.connect(gain);
-    gain.connect(this.master);
+    gain.connect(out);
     osc.start(when);
     osc.stop(when + 0.6);
   }
 
   private hat(when: number, level: number): void {
     const ctx = this.ctx;
-    if (!ctx || !this.master || !this.noiseBuffer) return;
+    const out = this.trackGain;
+    if (!ctx || !out || !this.noiseBuffer) return;
 
     const source = ctx.createBufferSource();
     source.buffer = this.noiseBuffer;
@@ -283,14 +314,15 @@ export class JukeboxPlayer {
 
     source.connect(filter);
     filter.connect(gain);
-    gain.connect(this.master);
+    gain.connect(out);
     source.start(when);
     source.stop(when + 0.08);
   }
 
   private hiss(when: number, duration: number): void {
     const ctx = this.ctx;
-    if (!ctx || !this.master || !this.noiseBuffer) return;
+    const out = this.trackGain;
+    if (!ctx || !out || !this.noiseBuffer) return;
 
     const source = ctx.createBufferSource();
     source.buffer = this.noiseBuffer;
@@ -306,7 +338,7 @@ export class JukeboxPlayer {
 
     source.connect(filter);
     filter.connect(gain);
-    gain.connect(this.master);
+    gain.connect(out);
     source.start(when);
     source.stop(when + duration);
   }

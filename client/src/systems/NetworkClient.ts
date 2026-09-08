@@ -105,6 +105,11 @@ export class NetworkClient {
     return this.room?.sessionId;
   }
 
+  /** Colyseus room id, used as proof of presence when minting a voice token. */
+  get roomId(): string | undefined {
+    return this.room?.roomId;
+  }
+
   get isConnected(): boolean {
     return this.room !== undefined;
   }

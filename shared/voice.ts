@@ -71,6 +71,17 @@ export function voiceRoomFor(zone: ZoneConfig, instanceId?: string): string {
 }
 
 /**
+ * Whether a zone's voice room is shared across every Colyseus room for it.
+ *
+ * Non-instanced zones deliberately share one call, so everyone in the Cafe can
+ * hear each other. That only holds while the zone fits in a single Colyseus
+ * room — past that, callers should pass the room id so the call splits with it.
+ */
+export function voiceRoomIsShared(zone: ZoneConfig): boolean {
+  return !zone.instanced;
+}
+
+/**
  * Whether the microphone should be live on arriving in a zone.
  *
  * 11's pillar: quiet vs social is expressed by which building you are in, never

@@ -9,16 +9,17 @@ The point is **presence, not progression** — see
 
 ---
 
-## Status: Phase 3 mostly complete
+## Status: Phase 4 mostly complete
 
 | Phase | Scope | State |
 |---|---|---|
-| **0** | Single-player skeleton: Town Square, WASD grid movement, collision, camera | **Done** — 23/23 smoke checks |
+| **0** | Single-player skeleton: Town Square, WASD grid movement, collision, camera | **Done** — 24/24 smoke checks |
 | **1** | Colyseus server, multiplayer sync in Town Square | **Done** — 26/26 sync checks |
 | **2** | All zones + zone transitions + NPC dialogue + friends list | **Done** — 42/42 world checks |
 | **3** | Persistence, arcade minigames, study tracking, text chat | **Done** — 16/16 arcade checks |
-| 3a | Supabase auth + real accounts | **Blocked** — needs credentials, see below |
-| 4 | Jukebox + voice chat | Not started |
+| **4** | Shared jukebox + voice policy | **Done** — 20/20 music checks |
+| 3a | Supabase auth + real accounts | **Blocked** — needs credentials |
+| 4a | Voice transport (LiveKit) | **Blocked** — needs credentials |
 | 5 | Real pixel art, remaining minigames, polish | Not started |
 
 **Playable right now:** type a name and walk the whole town, play the arcade,
@@ -36,6 +37,10 @@ Blitz** (up to four players, scored by the server). Scores persist and come back
 as a leaderboard. Sitting at a focus pod accrues **study time**, timed by the
 server and written when you stand up. **Enter** opens chat — messages appear as
 bubbles over the speaker and in a log panel.
+
+The **Cafe jukebox** and **Park bandstand** play one shared queue per room.
+Everyone in the room hears the same track at the same point in it, including
+someone who walks in halfway through. Queue a track, or vote to skip.
 
 Open a second browser and you see each other live, with nameplates, moving at
 the same 130ms-per-tile cadence, walking between zones, chatting, and each
@@ -77,6 +82,7 @@ node tools/phase0_smoke.mjs  # single-player smoke test (no server needed)
 node tools/phase1_sync.mjs   # two-client multiplayer sync test (boots server + client)
 node tools/phase2_world.mjs   # walks every zone door and back (single-player)
 node tools/phase3_arcade.mjs  # arcade, chat and persistence
+node tools/phase4_music.mjs   # shared jukebox sync and voice policy
 node tools/capture_screens.mjs # screenshot the loading, title and world screens
 ```
 
@@ -91,6 +97,7 @@ Both need `npx playwright install chromium` once. Add `--headed` to watch.
 | `W` `A` `S` `D` (or arrows) | Move one tile |
 | `Space` (or `Enter`) | Interact / advance dialogue |
 | `Enter` | Chat (Enter sends, Esc cancels) |
+| `M` | Toggle microphone |
 | `Esc` | Friends panel |
 
 Tap a direction you aren't facing to **turn in place**; hold it to walk.
@@ -311,6 +318,50 @@ posting a result.
 
 ---
 
+## Music and voice
+
+### Jukebox — working
+
+One queue per **room**, not per player. The server owns the queue *and the
+clock*: it records when the current track started, and each client derives its
+own offset from that. Someone arriving halfway through lands on the same bar as
+everyone already there, which is the whole point of listening together rather
+than each person hearing their own copy.
+
+Skip is a **vote**, not a button — one person silencing a track the room is
+listening to is exactly the shared-state problem worth avoiding.
+
+The music is **synthesised in the browser** from track parameters, the same way
+the tilesets are generated. There is no audio in this repo and licensed tracks
+could not be invented. That choice also buys the property the feature needs: a
+generated track is deterministic and seekable by arithmetic, so joining
+mid-track is exact. Giving a `Track` an `audioUrl` swaps in real audio without
+touching the sync model or the UI.
+
+### Voice — policy working, transport unverified
+
+The **mute policy** is built and tested: the Library defaults muted, the Cafe
+defaults on, applied automatically on arrival — zoning by walking in rather than
+by a settings toggle — with a manual override (`M`) that always wins and
+persists per zone.
+
+The **transport** has never carried audio. LiveKit needs credentials that were
+not available. The client asks the server for a token and hands it to the
+provider SDK; with no credentials the server reports `not_configured` and the
+HUD says `MIC — not set up` rather than showing a mic button that silently does
+nothing. "muted", "blocked" and "not set up" are different situations and read
+as such.
+
+Token requests are **not** unauthenticated: the caller must prove they are a
+current member of the Colyseus room they are asking about, and the identity on
+the token comes from that room's own record of them rather than from the
+request body.
+
+To turn it on, set `LIVEKIT_URL`, `LIVEKIT_API_KEY` and `LIVEKIT_API_SECRET` in
+`server/.env` and restart.
+
+---
+
 ## Known deviations from the specs
 
 Flagged rather than made silently:
@@ -329,6 +380,8 @@ Flagged rather than made silently:
 | 05 | Players don't collide with each other | Not specified either way. Blocking is grief-able in a hangout game and can trap someone in a doorway; flagged as an open question |
 | 08: Phase 3 | Real accounts not delivered | Supabase needs credentials that were not available. Built against a `Store` interface so switching is config, not a refactor |
 | 02: Postgres | `PostgresStore` is untested | No database was available; the JSON store is exercised by the suites instead. Flagged at the top of the file |
+| 08: Phase 4 | Voice transport unverified | LiveKit needs credentials. The mute policy, token endpoint and UI states are built and tested; the audio path is not |
+| 03: curated playlist | Music is synthesised, not licensed audio | No audio in the repo and licensed tracks cannot be invented. Also makes mid-track joins exact |
 
 ## Tooling gaps
 

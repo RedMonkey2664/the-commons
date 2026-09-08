@@ -62,6 +62,12 @@ export class Jukebox {
       this.host.rejectTo(sessionId, { reason: 'rate_limited' });
       return;
     }
+
+    // Stamped on every ATTEMPT, not only on success. Recording it after the
+    // validation below let a client spam unknown-track or queue-full requests
+    // in a tight loop and never trip the limiter, because a rejected request
+    // never updated the clock it is measured against.
+    this.lastRequestAt.set(sessionId, now);
     if (this.queue.length >= JUKEBOX_LIMITS.maxQueue) {
       this.host.rejectTo(sessionId, { reason: 'queue_full' });
       return;
@@ -73,7 +79,6 @@ export class Jukebox {
       return;
     }
 
-    this.lastRequestAt.set(sessionId, now);
     this.queue.push({ track, requestedBy: displayName, requestedById: sessionId });
 
     // Nothing playing: start immediately rather than waiting for a timer.

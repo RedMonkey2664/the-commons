@@ -240,12 +240,19 @@ try {
 
   // --- queueing -----------------------------------------------------------
   console.log('\nqueueing');
-  const before = (await musicState(alpha)).queueLength;
-  await alpha.page.evaluate((keys) => {
+  const beforeState = await musicState(alpha);
+  const before = beforeState.queueLength;
+
+  // Pick a track that is NOT already playing. The room seeds itself with a
+  // random track, so a hardcoded id can collide with it — and then "did the
+  // track change?" below cannot distinguish a skip from a no-op.
+  const queuedId = beforeState.nowPlayingId === 'late_bus' ? 'two_weeks' : 'late_bus';
+
+  await alpha.page.evaluate(({ keys, trackId }) => {
     const game = window.__COMMONS__.game;
     const key = keys.find((k) => game.scene.isActive(k));
-    game.scene.getScene(key).network.queueTrack('late_bus');
-  }, ZONE_KEYS);
+    game.scene.getScene(key).network.queueTrack(trackId);
+  }, { keys: ZONE_KEYS, trackId: queuedId });
 
   a = await waitFor(() => musicState(alpha), (s) => s.queueLength > before);
   check('queueing a track lengthens the queue', a.queueLength === before + 1,
@@ -259,7 +266,7 @@ try {
   await alpha.page.evaluate((keys) => {
     const game = window.__COMMONS__.game;
     const key = keys.find((k) => game.scene.isActive(k));
-    game.scene.getScene(key).network.queueTrack('two_weeks');
+    game.scene.getScene(key).network.queueTrack('nobody_awake');
   }, ZONE_KEYS);
   await alpha.page.waitForTimeout(700);
   const afterSpam = await musicState(alpha);
@@ -277,12 +284,16 @@ try {
   await alpha.page.waitForTimeout(800);
 
   const oneVote = await musicState(alpha);
-  // With two listeners, one vote meets the 50% threshold and skips; the check
-  // that matters is that the vote is COUNTED and shared, not that one person
-  // can never skip.
-  check('a skip vote is registered and shared',
-    oneVote.skipVotes > 0 || oneVote.nowPlayingId !== playingBefore,
-    `votes ${oneVote.skipVotes}, now ${oneVote.nowPlayingId}`);
+  // Two listeners, so one vote meets the 50% threshold and the queued track
+  // takes over. What is being checked is that the vote was ACTED ON by the
+  // server, not that one person can never skip.
+  check('a skip vote advances to the queued track',
+    oneVote.nowPlayingId === queuedId,
+    `expected ${queuedId}, got ${oneVote.nowPlayingId} (was ${playingBefore})`);
+
+  const betaAfterSkip = await waitFor(() => musicState(beta), (s) => s.nowPlayingId === queuedId);
+  check('the other client hears the skip too',
+    betaAfterSkip.nowPlayingId === queuedId, String(betaAfterSkip.nowPlayingId));
 
   // --- voice mute policy --------------------------------------------------
   console.log('\nvoice policy');

@@ -468,8 +468,16 @@ export abstract class ZoneScene extends Phaser.Scene {
       return;
     }
 
-    const skew = state.serverNow - Date.now();
-    const offsetMs = Date.now() + skew - state.startedAt;
+    // Offset as of the moment the server SENT this, which is a few ms ago.
+    //
+    // Written directly rather than as `Date.now() + (serverNow - Date.now())`,
+    // which reduces to exactly this and only looked like a skew correction.
+    // Network transit is not compensated: it is tens of ms at worst, well under
+    // the 900ms drift guard in JukeboxPlayer.play(), so correcting for it would
+    // add a round-trip estimator for an error nobody can hear. The panel's
+    // progress bar DOES hold a skew, because it re-derives server time every
+    // frame from a reading taken once.
+    const offsetMs = state.serverNow - state.startedAt;
 
     // Past the end already (a stale message, or a long round trip): let the
     // next broadcast place us rather than starting a track that has finished.
@@ -622,7 +630,14 @@ export abstract class ZoneScene extends Phaser.Scene {
 
       // 05: the voice room maps to the same zone boundary, and the zone's
       // default mute applies automatically on arrival.
-      void this.voice?.joinZone(this.zone);
+      //
+      // The Colyseus session is handed over as proof of presence: the server
+      // mints a voice token only for someone actually in that room, and takes
+      // their identity from its own record rather than from the request.
+      const roomId = network.roomId;
+      const sessionId = network.sessionId;
+      if (roomId && sessionId) void this.voice?.joinZone(this.zone, { roomId, sessionId });
+      else void this.voice?.joinZone(this.zone);
     } catch (error) {
       console.warn('[net] offline — running single-player:', (error as Error).message);
       ui.hud?.setConnected(false);

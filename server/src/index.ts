@@ -8,7 +8,7 @@
 import { createServer } from 'node:http';
 import cors from 'cors';
 import express from 'express';
-import { Server } from 'colyseus';
+import { Server, matchMaker } from 'colyseus';
 import { WebSocketTransport } from '@colyseus/ws-transport';
 import {
   MINIGAME_ROOM_TYPE,
@@ -119,14 +119,51 @@ app.post('/scores/:minigameId', async (request, response) => {
  * than a mic button that silently does nothing.
  */
 app.post('/voice/token', async (request, response) => {
-  const body = request.body as { zoneId?: unknown; identity?: unknown; displayName?: unknown };
+  const body = request.body as { roomId?: unknown; sessionId?: unknown };
 
-  const zoneId = typeof body.zoneId === 'string' ? body.zoneId : '';
-  const identity = typeof body.identity === 'string' ? body.identity.slice(0, 64) : '';
+  const roomId = typeof body.roomId === 'string' ? body.roomId : '';
+  const sessionId = typeof body.sessionId === 'string' ? body.sessionId : '';
+
+  if (!roomId || !sessionId) {
+    response.status(400).json({ error: 'roomId and sessionId are required' });
+    return;
+  }
+
+  /**
+   * Prove the caller is who and where they say.
+   *
+   * The token grants publish rights in a live voice room, so it cannot be
+   * minted from an unauthenticated body: a caller could otherwise mint one as
+   * another player (LiveKit evicts the real holder of a duplicate identity) or
+   * for a zone they are not standing in.
+   *
+   * There is no account system yet, so the proof used is the Colyseus session
+   * the player already holds: they must be a CURRENT member of the room they
+   * are asking about, and the identity comes from that room's own record of
+   * them rather than from this request. Real auth in a later pass strengthens
+   * this without changing its shape.
+   */
+  const room = matchMaker.getLocalRoomById(roomId) as ZoneRoom | undefined;
+  const present = room?.clients?.some((c) => c.sessionId === sessionId) ?? false;
+
+  if (!room || !present) {
+    response.status(403).json({ error: 'not a member of that room' });
+    return;
+  }
+
+  const zoneId = (room.metadata as { zoneId?: string } | undefined)?.zoneId ?? '';
   const zone = ZONES.find((z) => z.id === zoneId);
+  const identity = room.userIdFor?.(sessionId);
 
   if (!zone || !identity) {
-    response.status(400).json({ error: 'zoneId and identity are required' });
+    response.status(403).json({ error: 'room is not a zone room' });
+    return;
+  }
+
+  // 02: "not designed for hundreds in one room". VOICE_LIMITS is the cap that
+  // actually applies to the call, which is smaller than the Colyseus room cap.
+  if (room.clients.length > VOICE_LIMITS.maxParticipants) {
+    response.json({ availability: 'unavailable' });
     return;
   }
 
@@ -141,16 +178,21 @@ app.post('/voice/token', async (request, response) => {
 
   try {
     const { AccessToken } = await import('livekit-server-sdk');
-    const room = voiceRoomFor(zone);
+    // Instanced zones get one voice room per Colyseus room, so two unrelated
+    // study groups — or a Cafe that has overflowed into a second room — are not
+    // dropped into the same call.
+    const voiceRoom = voiceRoomFor(zone, room.roomId);
     const at = new AccessToken(apiKey, apiSecret, {
       identity,
+      // Carried so participants show a name rather than an opaque id.
+      name: room.displayNameFor?.(sessionId) ?? 'Wanderer',
       ttl: VOICE_LIMITS.tokenTtlSeconds,
     });
-    at.addGrant({ roomJoin: true, room, canPublish: true, canSubscribe: true });
+    at.addGrant({ roomJoin: true, room: voiceRoom, canPublish: true, canSubscribe: true });
 
     response.json({
       availability: 'ready',
-      room,
+      room: voiceRoom,
       url,
       identity,
       token: await at.toJwt(),
