@@ -3,5 +3,8 @@ export * from './designTokens.js';
 export * from './animationConfig.js';
 export * from './tilemap.js';
 export * from './net.js';
+export * from './chat.js';
+export * from './persistence.js';
+export * from './minigames.js';
 export * from './zones.config.js';
 export * from './minigames.config.js';

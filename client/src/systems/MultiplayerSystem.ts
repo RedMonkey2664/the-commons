@@ -160,6 +160,11 @@ export class MultiplayerSystem {
    * player backwards — which a burst hitting the rate limiter can trigger
    * during entirely legitimate play.
    */
+  /** Show a chat message over its author's head, if they are on screen. */
+  showChatBubble(sessionId: string, text: string): void {
+    this.remotes.get(sessionId)?.say(text);
+  }
+
   handleCorrection(message: CorrectionMessage): void {
     if (message.seq < this.network.lastSentSeq) return;
     this.snapLocalTo({ x: message.x, y: message.y });

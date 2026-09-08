@@ -90,6 +90,13 @@ export abstract class ZoneScene extends Phaser.Scene {
   }
 
   create(): void {
+    // Returning from a paused minigame resumes this scene rather than
+    // recreating it, so control has to be handed back explicitly.
+    this.events.on(Phaser.Scenes.Events.RESUME, () => {
+      this.player?.setBlocked(false);
+      this.controls?.reset();
+    });
+
     // Booting a zone directly (isolation testing) must not depend on BootScene.
     if (!this.textures.exists(ASSET_KEYS.tileset)) generateAllPlaceholderArt(this);
     registerCharacterAnimations(this, ASSET_KEYS.npcSheet);
@@ -104,6 +111,7 @@ export abstract class ZoneScene extends Phaser.Scene {
     // this system, and both callbacks resolve lazily, so this ordering keeps
     // every field assigned before anything can fire.
     this.controls = new InputController(this);
+    this.setupChatInput();
     this.interactions = new InteractionSystem(this, this.zone, this.zoneMap, {
       setBlocked: (blocked) => this.player.setBlocked(blocked),
       transitionTo: (zoneId) => this.transitionTo(zoneId),
@@ -116,6 +124,7 @@ export abstract class ZoneScene extends Phaser.Scene {
         this.player.stand();
         this.multiplayer?.pushStatus('idle');
       },
+      launchMinigame: (sceneKey) => this.launchMinigame(sceneKey),
     });
 
     this.createPlayer();
@@ -127,6 +136,11 @@ export abstract class ZoneScene extends Phaser.Scene {
     // boot UIScene has been launched but has not run create() yet, so the panel
     // does not exist to be configured.
     this.time.delayedCall(0, () => {
+      ui.chat?.setSendHandler((text) => {
+        if (this.network?.isConnected) this.network.sendChat(text);
+        else ui.chat?.system('not connected — nobody can hear you');
+      });
+
       ui.friends?.setEntriesProvider(() =>
         (this.multiplayer?.roster ?? []).map((person) => ({
           displayName: person.displayName,
@@ -160,6 +174,12 @@ export abstract class ZoneScene extends Phaser.Scene {
     // movement is inert; this stops the same press also re-triggering the world.
     if (dialogueOpen) {
       if (this.controls.justPressed('interact')) dialogue?.advance();
+      return;
+    }
+
+    // The composer owns the keyboard while it is open.
+    if (ui.chat?.isComposing) {
+      this.controls.reset();
       return;
     }
 
@@ -329,6 +349,66 @@ export abstract class ZoneScene extends Phaser.Scene {
     });
   }
 
+  /**
+   * Chat input.
+   *
+   * Hooked at the keyboard rather than through InputController because the
+   * composer needs raw characters, not mapped game actions — and because while
+   * it is open the world must receive NOTHING. Typing "swwwd" to a friend
+   * should not walk you into a pond.
+   */
+  private setupChatInput(): void {
+    const keyboard = this.input.keyboard;
+    if (!keyboard) return;
+
+    const onKey = (event: KeyboardEvent) => {
+      const chat = ui.chat;
+      if (!chat) return;
+
+      if (chat.isComposing) {
+        if (event.key === 'Enter') {
+          chat.submit();
+          this.controls.reset();
+          return;
+        }
+        if (event.key === 'Escape') {
+          chat.cancel();
+          this.controls.reset();
+          return;
+        }
+        chat.handleKey(event);
+        return;
+      }
+
+      // Enter opens the composer, but not on top of a dialogue box or panel —
+      // those already own the keyboard.
+      if (event.key === 'Enter' && !ui.dialogue?.isVisible && !ui.friends?.isOpen) {
+        chat.open();
+        this.controls.reset();
+      }
+    };
+
+    keyboard.on('keydown', onKey);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => keyboard.off('keydown', onKey));
+  }
+
+  /**
+   * Hand the screen to a minigame.
+   *
+   * The zone is PAUSED rather than stopped, so returning puts the player back
+   * exactly where they were standing, still facing the cabinet, still in the
+   * same Colyseus room — walking out of the arcade and back in again to resume
+   * would be a much worse experience for a two-minute game.
+   */
+  protected launchMinigame(sceneKey: string): void {
+    if (this.transitioning) return;
+    this.player.setBlocked(true);
+    ui.friends?.close();
+    this.scene.pause();
+    this.scene.launch(sceneKey, { returnScene: this.zone.sceneKey });
+    this.scene.bringToTop(sceneKey);
+  }
+
   /** Hook for zone-specific setup (Pomodoro pods, jukebox, cabinets). */
   protected onZoneReady(): void {}
 
@@ -403,12 +483,30 @@ export abstract class ZoneScene extends Phaser.Scene {
           displayName: session.displayName ?? 'Wanderer',
           spriteKey: session.spriteKey,
           fromZone: this.sceneData.fromZone,
+          userId: session.userId,
         },
         {
           onPlayerAdd: (state, id) => this.multiplayer?.handlePlayerAdd(state, id),
           onPlayerChange: (state, id) => this.multiplayer?.handlePlayerChange(state, id),
           onPlayerRemove: (id) => this.multiplayer?.handlePlayerRemove(id),
           onCorrection: (message) => this.multiplayer?.handleCorrection(message),
+          onChat: (message) => {
+            ui.chat?.append(message);
+            // Your own words appear in the log; the bubble belongs over the
+            // OTHER person's head, since you can already see what you typed.
+            if (message.authorId !== network.sessionId) {
+              this.multiplayer?.showChatBubble(message.authorId, message.text);
+            }
+          },
+          onChatRejected: ({ reason }) => {
+            ui.chat?.system(
+              reason === 'rate_limited'
+                ? 'slow down a moment'
+                : reason === 'too_long'
+                  ? 'that message was too long'
+                  : 'nothing to send',
+            );
+          },
           onError: (error) => console.warn('[net]', error.message),
           onLeave: () => {
             ui.hud?.setConnected(false);

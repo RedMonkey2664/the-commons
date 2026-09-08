@@ -14,7 +14,7 @@
 
 import type Phaser from 'phaser';
 import type { InteractableKind, InteractableObject, PlayerStatus, ZoneConfig, ZoneId } from '@commons/shared';
-import { COLORS, SIT, getZone } from '@commons/shared';
+import { COLORS, SIT, getMinigame, getZone } from '@commons/shared';
 import { ui } from '../ui/UIScene';
 
 export interface InteractionContext {
@@ -23,6 +23,8 @@ export interface InteractionContext {
   object: InteractableObject;
   /** Locks/unlocks player movement for the duration of the interaction. */
   setBlocked: (blocked: boolean) => void;
+  /** Pause this zone and hand the screen to a minigame scene. */
+  launchMinigame: (sceneKey: string) => void;
   /** Walk out of this zone into another. Owned by ZoneScene (fade + room swap). */
   transitionTo: (zoneId: ZoneId) => void;
   isSitting: () => boolean;
@@ -147,11 +149,26 @@ export const INTERACTABLE_HANDLERS: Partial<Record<InteractableKind, Interaction
   },
 
   /**
-   * Arcade cabinet. Launching the minigame scene is Phase 3; the cabinet itself
-   * already exists here because the Arcade builds one per config entry.
+   * Arcade cabinet.
+   *
+   * Looks the minigame up by id and launches its scene by KEY. This handler
+   * knows nothing about any particular game — which is the point of 06's
+   * plugin pattern, and why adding a fifth cabinet needs no change here.
    */
   cabinet: (ctx) => {
-    speak(ctx, `${textOf(ctx.object, 'An arcade cabinet.')}|Insert imaginary coin. (Phase 3.)`);
+    const minigameId = ctx.object.props['minigameId'];
+    const minigame = typeof minigameId === 'string' ? getMinigame(minigameId) : undefined;
+
+    if (!minigame) {
+      speak(ctx, 'This cabinet is out of order.');
+      return;
+    }
+    if (!ctx.scene.scene.manager.keys[minigame.sceneKey]) {
+      speak(ctx, `${minigame.displayName} is listed but its scene is not registered.`);
+      return;
+    }
+
+    ctx.launchMinigame(minigame.sceneKey);
   },
 };
 

@@ -14,9 +14,25 @@
  */
 
 import { Room, type Client } from 'colyseus';
-import type { Direction, JoinOptions, MoveIntent, FaceIntent, StatusIntent, ZoneConfig, ZoneId } from '@commons/shared';
+import type {
+  ChatMessage,
+  ChatSayIntent,
+  Direction,
+  FaceIntent,
+  JoinOptions,
+  MoveIntent,
+  StatusIntent,
+  ZoneConfig,
+  ZoneId,
+} from '@commons/shared';
 import {
+  CHAT_CLIENT_MESSAGE,
+  CHAT_LIMITS,
+  CHAT_RATE_LIMIT,
+  CHAT_SERVER_MESSAGE,
   CLIENT_MESSAGE,
+  MAX_STUDY_SECONDS,
+  MIN_STUDY_SECONDS,
   MOVE_RATE_LIMIT,
   SERVER_MESSAGE,
   getZone,
@@ -25,6 +41,7 @@ import {
 } from '@commons/shared';
 import { PlayerSchema, ZoneState } from '../schemas/PlayerState.js';
 import { loadZoneMap, type ServerZoneMap } from '../world/zoneMaps.js';
+import { getStore } from '../db/client.js';
 
 const VALID_DIRECTIONS: readonly Direction[] = ['up', 'down', 'left', 'right'];
 const VALID_STATUSES = ['idle', 'studying', 'listening', 'afk'] as const;
@@ -34,6 +51,23 @@ interface ClientBudget {
   /** Token bucket for movement intents. */
   tokens: number;
   lastRefillAt: number;
+  /** Separate bucket for chat, so talking never eats a player's move budget. */
+  chatTokens: number;
+  chatRefillAt: number;
+}
+
+/**
+ * An open study session.
+ *
+ * 11: study time is "a passive byproduct, not a feature you use" — time accrues
+ * while status is `studying`, and the row is written when it stops. Held
+ * server-side so the duration comes from the server clock rather than a number
+ * a client reports about itself.
+ */
+interface OpenStudySession {
+  userId: string;
+  displayName: string;
+  startedAt: number;
 }
 
 export class ZoneRoom extends Room<ZoneState> {
@@ -43,6 +77,9 @@ export class ZoneRoom extends Room<ZoneState> {
   private zone!: ZoneConfig;
   private zoneMap!: ServerZoneMap;
   private readonly budgets = new Map<string, ClientBudget>();
+  private readonly studySessions = new Map<string, OpenStudySession>();
+  /** Stable user id per session, so persistence is not keyed on a socket. */
+  private readonly userIds = new Map<string, string>();
 
   override onCreate(options: { zoneId?: string }): void {
     this.zone = resolveZone(options.zoneId);
@@ -62,6 +99,10 @@ export class ZoneRoom extends Room<ZoneState> {
 
     this.onMessage(CLIENT_MESSAGE.status, (client, message: StatusIntent) => {
       this.handleStatus(client, message);
+    });
+
+    this.onMessage(CHAT_CLIENT_MESSAGE.say, (client, message: ChatSayIntent) => {
+      this.handleChat(client, message);
     });
 
     console.log(`[zone] room created: ${this.zone.displayName} (${this.roomId})`);
@@ -90,19 +131,45 @@ export class ZoneRoom extends Room<ZoneState> {
     player.status = 'idle';
 
     this.state.players.set(client.sessionId, player);
-    this.budgets.set(client.sessionId, { tokens: MOVE_RATE_LIMIT.burst, lastRefillAt: Date.now() });
+    this.budgets.set(client.sessionId, {
+      tokens: MOVE_RATE_LIMIT.burst,
+      lastRefillAt: Date.now(),
+      chatTokens: CHAT_RATE_LIMIT.burst,
+      chatRefillAt: Date.now(),
+    });
+
+    // Phase 3 identity: a stable id supplied by the client, falling back to the
+    // session. Supabase auth replaces where this comes from, not how it is used.
+    const userId = typeof options?.userId === 'string' && options.userId.length > 0
+      ? options.userId
+      : client.sessionId;
+    this.userIds.set(client.sessionId, userId);
+
+    void getStore()
+      .upsertUser({ id: userId, displayName: player.displayName, spriteKey: player.spriteKey })
+      .catch((error: unknown) => {
+        console.warn('[zone] could not record user:', (error as Error).message);
+      });
 
     console.log(`[zone] ${player.displayName} joined ${this.zone.displayName} (${this.clients.length} present)`);
   }
 
   override onLeave(client: Client): void {
     const player = this.state.players.get(client.sessionId);
+
+    // Walking out mid-session still counts the time up to now. Without this,
+    // leaving the Library would silently discard the whole session.
+    this.closeStudySession(client.sessionId);
+
     this.state.players.delete(client.sessionId);
     this.budgets.delete(client.sessionId);
+    this.userIds.delete(client.sessionId);
     console.log(`[zone] ${player?.displayName ?? client.sessionId} left ${this.zone.displayName}`);
   }
 
   override onDispose(): void {
+    // Anyone still seated when the room dies keeps the time they accrued.
+    for (const sessionId of [...this.studySessions.keys()]) this.closeStudySession(sessionId);
     console.log(`[zone] room disposed: ${this.zone.displayName} (${this.roomId})`);
   }
 
@@ -164,7 +231,82 @@ export class ZoneRoom extends Room<ZoneState> {
     if (player.status === message.status) return;
     if (!this.spendMoveToken(client.sessionId)) return;
 
+    const wasStudying = player.status === 'studying';
     player.status = message.status;
+
+    // Status IS the study timer (11) — there is no separate start/stop.
+    if (message.status === 'studying' && !wasStudying) {
+      this.openStudySession(client.sessionId, player.displayName);
+    } else if (wasStudying) {
+      this.closeStudySession(client.sessionId);
+    }
+  }
+
+  private handleChat(client: Client, message: ChatSayIntent): void {
+    const player = this.state.players.get(client.sessionId);
+    if (!player) return;
+
+    const raw = typeof message?.text === 'string' ? message.text : '';
+    // Collapse whitespace so a wall of newlines cannot inflate one message.
+    const text = raw.replace(/\s+/g, ' ').trim();
+
+    if (text.length === 0) {
+      client.send(CHAT_SERVER_MESSAGE.rejected, { reason: 'empty' });
+      return;
+    }
+    if (text.length > CHAT_LIMITS.maxLength) {
+      client.send(CHAT_SERVER_MESSAGE.rejected, { reason: 'too_long' });
+      return;
+    }
+    if (!this.spendChatToken(client.sessionId)) {
+      client.send(CHAT_SERVER_MESSAGE.rejected, { reason: 'rate_limited' });
+      return;
+    }
+
+    // Timestamped and id'd by the SERVER, so ordering does not depend on
+    // client clocks and a client cannot forge either.
+    this.broadcast(CHAT_SERVER_MESSAGE.message, {
+      id: `${this.roomId}-${Date.now()}-${client.sessionId}`,
+      authorId: client.sessionId,
+      displayName: player.displayName,
+      text,
+      sentAt: Date.now(),
+    } satisfies ChatMessage);
+  }
+
+  // -- study time ----------------------------------------------------------
+
+  private openStudySession(sessionId: string, displayName: string): void {
+    const userId = this.userIds.get(sessionId);
+    if (!userId) return;
+    this.studySessions.set(sessionId, { userId, displayName, startedAt: Date.now() });
+  }
+
+  private closeStudySession(sessionId: string): void {
+    const open = this.studySessions.get(sessionId);
+    if (!open) return;
+    this.studySessions.delete(sessionId);
+
+    const seconds = Math.floor((Date.now() - open.startedAt) / 1000);
+    if (seconds < MIN_STUDY_SECONDS) return; // a misclick is not study time
+    const clamped = Math.min(seconds, MAX_STUDY_SECONDS);
+
+    void getStore()
+      .recordStudySession({
+        userId: open.userId,
+        zoneId: this.zone.id,
+        seconds: clamped,
+        endedAt: new Date().toISOString(),
+      })
+      .then((totals) => {
+        console.log(
+          `[study] ${open.displayName} +${clamped}s in ${this.zone.id} ` +
+            `(total ${Math.round(totals.totalSeconds / 60)}m)`,
+        );
+      })
+      .catch((error: unknown) => {
+        console.warn('[study] could not record session:', (error as Error).message);
+      });
   }
 
   // -- helpers -------------------------------------------------------------
@@ -183,6 +325,23 @@ export class ZoneRoom extends Room<ZoneState> {
 
     if (budget.tokens < 1) return false;
     budget.tokens -= 1;
+    return true;
+  }
+
+  /** Chat has its own bucket: talking must never eat a player's move budget. */
+  private spendChatToken(sessionId: string): boolean {
+    const budget = this.budgets.get(sessionId);
+    if (!budget) return false;
+
+    const now = Date.now();
+    const refill = (now - budget.chatRefillAt) / CHAT_RATE_LIMIT.minIntervalMs;
+    if (refill > 0) {
+      budget.chatTokens = Math.min(CHAT_RATE_LIMIT.burst, budget.chatTokens + refill);
+      budget.chatRefillAt = now;
+    }
+
+    if (budget.chatTokens < 1) return false;
+    budget.chatTokens -= 1;
     return true;
   }
 

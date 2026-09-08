@@ -14,6 +14,8 @@ const STORAGE_KEY = 'commons.session';
 interface StoredSession {
   displayName?: string;
   spriteKey?: string;
+  /** Stable across sessions on this browser. See Session.userId. */
+  userId?: string;
 }
 
 function read(): StoredSession {
@@ -54,6 +56,35 @@ class Session {
   set spriteKey(value: string) {
     this.state = { ...this.state, spriteKey: value };
     write(this.state);
+  }
+
+  /**
+   * Stable identity for persistence.
+   *
+   * Study time and high scores must accumulate against a person, not a socket,
+   * so this is generated once and kept. It is NOT a security boundary — anyone
+   * can edit their own localStorage. Supabase auth in a later pass replaces
+   * where this value comes from; every consumer keeps working unchanged
+   * because they only ever asked the session for an id.
+   */
+  get userId(): string {
+    if (!this.state.userId) {
+      const id = `u_${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36).slice(-4)}`;
+      this.state = { ...this.state, userId: id };
+      write(this.state);
+    }
+    return this.state.userId!;
+  }
+
+  /** Where the game server lives. Overridable for staging and tests. */
+  get serverUrl(): string {
+    try {
+      const override = localStorage.getItem('commons.serverUrl');
+      if (override) return override;
+    } catch {
+      /* private windows throw on storage access */
+    }
+    return (import.meta.env['VITE_SERVER_URL'] as string | undefined) ?? 'ws://localhost:2567';
   }
 
   /** True once the player has been through name entry. */

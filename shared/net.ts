@@ -69,6 +69,12 @@ export interface JoinOptions {
   displayName: string;
   spriteKey: string;
   /**
+   * Stable identity across sessions, so study time and high scores accumulate
+   * against a person rather than a socket. Phase 3 generates this client-side;
+   * Supabase auth replaces where it comes from, not how it is used.
+   */
+  userId?: string;
+  /**
    * Zone the player is arriving FROM, so the server can place them at the
    * matching entry point rather than the generic spawn — walking back and
    * forth through a door should put you on the correct side of it (03).

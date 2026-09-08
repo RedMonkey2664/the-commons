@@ -14,7 +14,7 @@
 
 import Phaser from 'phaser';
 import type { Direction, PlayerStatus, TileCoord } from '@commons/shared';
-import { COLORS, NETWORK, TYPOGRAPHY, hex } from '@commons/shared';
+import { CHAT_LIMITS, COLORS, NETWORK, TYPOGRAPHY, hex } from '@commons/shared';
 import { registerCharacterAnimations, idleFrameIndex, walkAnimKey } from '../art/characterAnimations';
 import { ASSET_KEYS } from '../art/placeholderArt';
 import { tileToWorld } from '../systems/GridMovement';
@@ -41,6 +41,8 @@ export class RemotePlayer {
   private readonly nameplate: Phaser.GameObjects.Text;
   private readonly statusIcon: Phaser.GameObjects.Arc;
   private moveTween?: Phaser.Tweens.Tween;
+  private bubble?: Phaser.GameObjects.Text;
+  private bubbleTimer?: Phaser.Time.TimerEvent;
 
   constructor(private readonly scene: Phaser.Scene, options: RemotePlayerOptions) {
     this.id = options.id;
@@ -125,6 +127,38 @@ export class RemotePlayer {
     });
   }
 
+  /**
+   * Speech bubble over the head (05). Long messages are elided here and read in
+   * full in the log — a bubble that grows to fit a paragraph covers the world.
+   */
+  say(text: string): void {
+    const shown =
+      text.length > CHAT_LIMITS.bubbleMaxChars
+        ? `${text.slice(0, CHAT_LIMITS.bubbleMaxChars - 1)}…`
+        : text;
+
+    this.bubbleTimer?.remove();
+    this.bubble?.destroy();
+
+    this.bubble = this.scene.add
+      .text(this.sprite.x, this.sprite.y - 54, shown, {
+        fontFamily: TYPOGRAPHY.dialogueFont,
+        fontSize: `${TYPOGRAPHY.hudFontSize}px`,
+        color: COLORS.dialogueBoxText,
+        backgroundColor: COLORS.dialogueBoxBg,
+        padding: { x: 8, y: 5 },
+        wordWrap: { width: 220 },
+        align: 'center',
+      })
+      .setOrigin(0.5, 1)
+      .setDepth(this.sprite.y + 500);
+
+    this.bubbleTimer = this.scene.time.delayedCall(CHAT_LIMITS.bubbleMs, () => {
+      this.bubble?.destroy();
+      this.bubble = undefined;
+    });
+  }
+
   setFacing(facing: Direction): void {
     if (this.facing === facing) return;
     this.facing = facing;
@@ -153,6 +187,7 @@ export class RemotePlayer {
     this.sprite.setDepth(this.sprite.y);
     this.nameplate.setPosition(this.sprite.x, this.sprite.y - 34).setDepth(this.sprite.y + 400);
     this.statusIcon.setPosition(this.sprite.x + 10, this.sprite.y - 32).setDepth(this.sprite.y + 401);
+    this.bubble?.setPosition(this.sprite.x, this.sprite.y - 54).setDepth(this.sprite.y + 500);
   }
 
   private showIdleFrame(): void {
@@ -162,6 +197,8 @@ export class RemotePlayer {
 
   destroy(): void {
     this.moveTween?.stop();
+    this.bubbleTimer?.remove();
+    this.bubble?.destroy();
     this.sprite.destroy();
     this.nameplate.destroy();
     this.statusIcon.destroy();

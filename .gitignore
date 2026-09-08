@@ -7,3 +7,4 @@ dist/
 .vite/
 coverage/
 tools/screenshots/
+server/.data/

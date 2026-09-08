@@ -7,12 +7,20 @@
 
 import { Client, getStateCallbacks, type Room } from 'colyseus.js';
 import type {
+  ChatMessage,
+  ChatRejected,
   CorrectionMessage,
   Direction,
   PlayerStatus,
   ZoneId,
 } from '@commons/shared';
-import { CLIENT_MESSAGE, SERVER_MESSAGE, ZONE_ROOM_TYPE } from '@commons/shared';
+import {
+  CHAT_CLIENT_MESSAGE,
+  CHAT_SERVER_MESSAGE,
+  CLIENT_MESSAGE,
+  SERVER_MESSAGE,
+  ZONE_ROOM_TYPE,
+} from '@commons/shared';
 
 /** Mirrors PlayerSchema on the server. */
 export interface NetworkPlayer {
@@ -45,6 +53,8 @@ export interface NetworkHandlers {
   onPlayerRemove?: (sessionId: string) => void;
   onPlayerChange?: (player: NetworkPlayer, sessionId: string) => void;
   onCorrection?: (message: CorrectionMessage) => void;
+  onChat?: (message: ChatMessage) => void;
+  onChatRejected?: (message: ChatRejected) => void;
   onError?: (error: Error) => void;
   onLeave?: (code: number) => void;
 }
@@ -100,7 +110,7 @@ export class NetworkClient {
 
   async joinZone(
     zoneId: ZoneId,
-    identity: { displayName: string; spriteKey: string; fromZone?: string },
+    identity: { displayName: string; spriteKey: string; fromZone?: string; userId?: string },
     handlers: NetworkHandlers,
   ): Promise<void> {
     this.joining = this.doJoin(zoneId, identity, handlers);
@@ -113,7 +123,7 @@ export class NetworkClient {
 
   private async doJoin(
     zoneId: ZoneId,
-    identity: { displayName: string; spriteKey: string; fromZone?: string },
+    identity: { displayName: string; spriteKey: string; fromZone?: string; userId?: string },
     handlers: NetworkHandlers,
   ): Promise<void> {
     this.handlers = handlers;
@@ -125,6 +135,7 @@ export class NetworkClient {
       displayName: identity.displayName,
       spriteKey: identity.spriteKey,
       fromZone: identity.fromZone,
+      userId: identity.userId,
     });
     // Walking out of the zone while the join was still in flight: the room
     // exists now, so leave it immediately rather than staying silently joined
@@ -153,6 +164,14 @@ export class NetworkClient {
 
     room.onMessage(SERVER_MESSAGE.correction, (message: CorrectionMessage) => {
       this.handlers.onCorrection?.(message);
+    });
+
+    room.onMessage(CHAT_SERVER_MESSAGE.message, (message: ChatMessage) => {
+      this.handlers.onChat?.(message);
+    });
+
+    room.onMessage(CHAT_SERVER_MESSAGE.rejected, (message: ChatRejected) => {
+      this.handlers.onChatRejected?.(message);
     });
 
     room.onError((code, message) => {
@@ -190,6 +209,10 @@ export class NetworkClient {
 
   sendStatus(status: PlayerStatus): void {
     this.room?.send(CLIENT_MESSAGE.status, { status });
+  }
+
+  sendChat(text: string): void {
+    this.room?.send(CHAT_CLIENT_MESSAGE.say, { text });
   }
 
   async leave(): Promise<void> {
