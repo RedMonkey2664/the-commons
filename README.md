@@ -368,6 +368,32 @@ stateful process. Rooms hold player positions, the jukebox clock and open
 WebSockets in memory, so it cannot run on serverless functions — Vercel hosts
 the client fine and cannot host the server at all.
 
+### Playing with friends today, without hosting anything
+
+The server can serve the client itself, so the whole game is one process on one
+port. That is the easiest thing to share:
+
+```bash
+npm run serve     # builds the client, then serves game + client on :2567
+npm run share     # opens a public https:// URL that forwards to :2567
+```
+
+`share` opens an SSH reverse tunnel to localhost.run — no account, no signup.
+It prints an `https://….lhr.life` URL; send that to a friend and you are playing
+together. A same-origin client derives `wss://` from the page automatically, so
+nothing needs configuring.
+
+Understand what this is before using it:
+
+- **It exposes the server on your machine to the public internet.** Anyone with
+  the link can join, and the link is guessable-ish. Only share it with people
+  you want in the room.
+- It lasts only while that terminal stays open, and the URL changes each time.
+- Everything runs on your machine, so when you close it, the town closes.
+
+That makes it right for "let's hang out this evening" and wrong for something
+you want up permanently. For that, deploy the server properly — below.
+
 ### The failure mode, first
 
 The client resolves its server URL **at build time**
