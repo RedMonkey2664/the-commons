@@ -1,24 +1,58 @@
-# Render blueprint for the game server.
+# Render blueprint: the whole game as ONE free service.
 #
-# The client is NOT here — it is a static bundle and belongs on Vercel or any
-# static host. This deploys only the Colyseus server it talks to.
+# Push the repo, then in Render: New > Blueprint > pick this repo. Nothing to
+# configure afterwards — the URL Render gives you is the game, and that link is
+# what you send people.
+#
+# One service rather than two on purpose. The server can serve the built client
+# itself, and then there is a single origin: the client derives its wss:// URL
+# from the page it was loaded from, so there is no server address to configure
+# into the bundle and no CORS allowlist to keep in step with it. Those two
+# settings are the entire difference between a deploy that works and a deploy
+# where every visitor sees OFFLINE.
+#
+# The `node` runtime rather than `docker`: these exact commands are the ones
+# tools/phase7b_single_origin.mjs runs, so they are tested. The Dockerfile does
+# the same thing for hosts that want an image, but has never been built.
 services:
   - type: web
-    name: the-commons-server
-    runtime: docker
-    dockerfilePath: ./Dockerfile
-    # Free instances sleep when idle; the first player to arrive after a sleep
-    # waits for a cold start rather than failing, and the client falls back to
-    # single-player in the meantime.
+    name: the-commons
+    runtime: node
     plan: free
+    # Free instances sleep after 15 minutes with no traffic and take about a
+    # minute to wake. The first player to arrive after a sleep waits; the game
+    # falls back to single-player if the socket does not come up in time, and a
+    # reload once the service is awake puts them in the town.
+    #
+    # In-game traffic counts as traffic, so a session that is being played does
+    # not sleep underneath the people playing it.
     healthCheckPath: /health
+
+    # --include=dev because Render sets NODE_ENV=production for the build, and
+    # npm then omits devDependencies — which is where vite, typescript and tsx
+    # live. Without it the build has no bundler and the start has no runtime.
+    #
+    # Named workspaces rather than a plain `npm ci`: the repo root's only
+    # devDependency is playwright, which downloads a browser bundle on install.
+    # It is for the test suites and has no business in a deploy.
+    buildCommand: >-
+      npm ci --include=dev --workspace shared --workspace client --workspace server &&
+      npm run build --workspace client
+    startCommand: npm start --workspace server
+
     envVars:
       - key: NODE_ENV
         value: production
-      # Set this to your deployed client's origin, with no trailing slash.
+
+      # Optional, and only for CROSS-origin clients — a separately hosted
+      # client on Vercel or GitHub Pages, say. The client this service serves
+      # itself is same-origin and is never gated by CORS.
       - key: ALLOWED_ORIGINS
         sync: false
-      # Optional. Without it the JSON store is used, and a free Render instance
-      # has an ephemeral disk — scores reset on every deploy.
+
+      # Optional. Free web services get no persistent disk, so without a
+      # database the JSON store lives on a filesystem that is wiped on every
+      # deploy and every sleep: high scores and study time reset. A free Render
+      # Postgres fixes that for its first 30 days, after which it expires.
       - key: DATABASE_URL
         sync: false

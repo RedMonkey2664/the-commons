@@ -1,5 +1,13 @@
-# Fly.io config for the game server. `fly launch --no-deploy` then `fly deploy`.
-app = "the-commons-server"
+# Fly.io config. `fly launch --no-deploy` then `fly deploy`.
+#
+# NOT a free option: Fly ended its free allowances in 2024 and new accounts get
+# a short trial only. It is here because it is the one host in this repo that
+# gives the game a persistent volume, so high scores and study minutes survive a
+# deploy without a database. For free hosting see render.yaml.
+#
+# The image contains the client as well as the server, so this is the whole
+# game on one URL — no separate static deployment, no CORS to configure.
+app = "the-commons"
 primary_region = "iad"
 
 [build]

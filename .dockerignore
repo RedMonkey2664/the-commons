@@ -1,10 +1,8 @@
 node_modules
 **/node_modules
+# Built inside the image, so a stale local build must not be copied over it.
 **/dist
 .git
 server/.data
-tools/screenshots
-client
-assets/tilesets
-assets/audio
+tools/
 *.md

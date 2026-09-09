@@ -16,19 +16,25 @@ The point is **presence, not progression** — see
 | **0** | Single-player skeleton: Town Square, WASD grid movement, collision, camera | **Done** — 24/24 smoke checks |
 | **1** | Colyseus server, multiplayer sync in Town Square | **Done** — 26/26 sync checks |
 | **2** | All zones + zone transitions + NPC dialogue + friends list | **Done** — 42/42 world checks |
-| **3** | Persistence, arcade minigames, study tracking, text chat | **Done** — 17/17 arcade checks |
+| **3** | Persistence, arcade minigames, study tracking, text chat | **Done** — 20/20 arcade checks |
 | **4** | Shared jukebox + voice policy | **Done** — 20/20 music checks |
 | **5** | Remaining minigames, cosmetics, ambient life, sound | **Done** — 37/37 polish checks |
 | **6** | Two more zones, two more cabinets, cafe drinks, interior art | **Done** — 29/29 world checks |
-| **7** | Deployable server: CORS allowlist, env config, graceful shutdown, host configs | **Done** — 12/12 deploy checks |
+| **7** | Deployable server: CORS allowlist, env config, graceful shutdown, host configs | **Done** — 14/14 deploy checks |
+| **7b** | One-URL deploy: server serves the client, nothing to configure | **Done** — 12/12 single-origin checks |
 | 3a | Supabase auth + real accounts | **Blocked** — needs credentials |
 | 4a | Voice transport (LiveKit) | **Blocked** — needs credentials |
-| 7a | Actually hosting it | **Ready** — needs you to pick a host and set two env vars |
+| 7a | Actually hosting it | **Ready** — push to a host, set nothing; see [Deploying](#deploying) |
 | 5a | Real pixel art to replace the procedural placeholders | **Blocked** — needs source art |
 
-207 checks pass across the eight suites. Every one drives a real browser
-against a real server and asserts on real game state; none of them stub the
-game.
+224 checks across the nine suites. Every one drives a real browser against a
+real server and asserts on real game state; none of them stub the game.
+
+`phase1_sync` is the one that is not reliably green on every machine: on
+Windows it has come back 25/26 twice for two different environmental reasons —
+once a remote tile lagging one step behind under load, once headless Chromium
+having no audio device for the WebAudio context. Both are the harness meeting
+the machine, not the game; a re-run passes the check that failed.
 
 **There is no Phase 6 in the specs.** 08's roadmap ends at Phase 5, whose last
 bullet is "anything you think of after actually using it with friends — this is
@@ -102,6 +108,10 @@ npm run dev:client     # http://localhost:5173
 Open two browser windows to see two players. The client connects automatically
 and falls back to single-player if the server is unreachable.
 
+To play with someone who is not sitting at your machine, see
+[Deploying](#deploying): `npm run share` puts tonight's session on a public URL
+without hosting anything, and Render hosts the whole game free for good.
+
 ### Other commands
 
 ```bash
@@ -117,6 +127,7 @@ node tools/phase4_music.mjs   # shared jukebox sync and voice policy
 node tools/phase5_polish.mjs  # remaining minigames, cosmetics, ambient
 node tools/phase6_world.mjs   # new zones, new cabinets, cafe drinks
 node tools/phase7_deploy.mjs  # PRODUCTION build + cross-origin + CORS
+node tools/phase7b_single_origin.mjs # the one-URL deploy, configuring nothing
 node tools/capture_zones.mjs  # screenshot zones, for looking at rather than asserting on
 node tools/capture_tileset.mjs # dump the generated tileset, labelled by index
 node tools/capture_screens.mjs # screenshot the loading, title and world screens
@@ -362,40 +373,80 @@ implementation of that interface, not an edit to the room.
 
 ## Deploying
 
-The client and the server are deployed **separately**, and that split is the
-thing to get right: the client is a static bundle, the server is a long-lived
-stateful process. Rooms hold player positions, the jukebox clock and open
-WebSockets in memory, so it cannot run on serverless functions — Vercel hosts
-the client fine and cannot host the server at all.
+The whole game deploys as **one service**: the server serves the client it was
+built with, so there is a single origin and a single URL to send people.
 
-### Vercel (or any static host) + a real server
+That is worth insisting on, because the alternative is where deployments of this
+game go wrong. A separately hosted client — Vercel, Netlify, GitHub Pages — can
+never be same-origin with the game server, since none of those run a persistent
+WebSocket process. So it needs a server address configured into it, and the
+server needs a CORS allowlist naming the client back, and if either is missing
+or stale every visitor sees `OFFLINE`. Same-origin needs neither: the client
+derives `wss://` from the page it was served by. Nothing to set, nothing to keep
+in step.
 
-A static host cannot run the game server — Vercel serves files and serverless
-functions, and a Colyseus room is a long-lived process holding state in memory.
-So a client hosted there is never same-origin with a server, and the address has
-to come from somewhere else.
+`tools/phase7b_single_origin.mjs` tests exactly that — it builds with
+`VITE_SERVER_URL` unset, starts the server with `ALLOWED_ORIGINS` unset, and
+plays two browsers against the result.
 
-It comes from the player, at runtime:
+### Free options, as of September 2026
 
-- Click **OFFLINE — click to connect** in the top right and paste the server's
-  address. It is remembered, so this happens once per browser.
-- Or share a link with it already in: `https://your-client.vercel.app/?server=https://abc.lhr.life`
-- Paste either an `https://` or a `wss://` address; both are understood, and the
-  scheme is converted for you.
+The server holds player positions, the jukebox clock and open WebSockets in
+memory, so it needs a host that runs a **persistent process**. That rules out
+serverless functions, and it is what makes most "free tier" lists useless here.
 
-This is why the URL is no longer frozen in at build time. It used to be, which
-meant changing servers required a rebuild and a redeploy — and a bundle built
-without the variable set silently told every visitor to connect to their own
-machine, which is exactly what the first deployment did.
+| Host | Free? | Good to know |
+|---|---|---|
+| **[Render](https://render.com/docs/free)** — *recommended* | Yes, ongoing | 512 MB, 750 instance-hours/month. Sleeps after 15 min with no traffic and takes ~1 min to wake. No persistent disk on free. `render.yaml` in this repo deploys it. |
+| [Oracle Cloud Always Free](https://www.oracle.com/cloud/free/) | Yes, ongoing | A real always-on VM, so no sleeping — the only free option that stays warm. Costs you a card at signup and an afternoon of Linux setup; no config in this repo. |
+| [Railway](https://docs.railway.com/pricing/plans) | Trial only | $5 one-time credit, then a Free plan capped at $1/month of usage. Realistically $5/month Hobby. Detects the `Dockerfile`. |
+| [Fly.io](https://fly.io/docs/about/cost-management/) | No | The free allowances ended in 2024; new accounts get a short trial. `fly.toml` is here if you are paying — it is the only config with a persistent volume. |
+| [Koyeb](https://www.koyeb.com/docs/faqs/pricing) | Closed | The free tier stopped taking new users after the February 2026 Mistral acquisition. |
+| Vercel / Netlify / Pages | Client only | Cannot run the game server at all. See [Two origins](#two-origins-a-static-client-and-a-server-elsewhere) if you want to use one anyway. |
 
-`VITE_SERVER_URL` still works and still wins over the page's own origin, so a
-build that knows its server can bake one in. It is now a convenience rather than
-a requirement.
+**About the sleeping.** Render's 15 minutes counts *all* traffic, including
+WebSocket messages from connections already open — and this game sends movement
+constantly — so a town with anyone in it does not fall asleep underneath them.
+It sleeps overnight, and the first person to arrive next morning waits about a
+minute. If the socket does not come up in time the game drops to single-player
+and says `OFFLINE`; a reload once the service is awake puts them in the town.
+The honest fix is not a paid plan but a pinger, and the honest description of a
+pinger is that it burns your 750 monthly hours to keep an empty town warm.
+
+### Render, start to finish
+
+1. Push this repo to GitHub.
+2. Render → **New → Blueprint** → pick the repo. It reads `render.yaml`.
+3. **Apply**. First build takes a few minutes.
+4. Open the `https://the-commons-*.onrender.com` URL it gives you. Send that
+   link to whoever you want in the town.
+
+There is nothing to configure afterwards. No environment variables, no CORS, no
+second deployment for the client — that is the whole point of the one-service
+shape. Two optional variables are declared in the blueprint and can stay unset:
+
+- `DATABASE_URL` — a free web service has **no persistent disk**, so without a
+  database the high scores and study minutes live on a filesystem that is wiped
+  on every deploy and every sleep. A free Render Postgres fixes that, and
+  [expires 30 days after creation](https://render.com/docs/free).
+- `ALLOWED_ORIGINS` — only for a cross-origin client, below. The client this
+  service serves itself is same-origin and is never subject to CORS.
+
+### Any host that takes a Dockerfile
+
+The `Dockerfile` builds the same one-service image: a builder stage compiles the
+client bundle, and the runtime stage runs the game server with that bundle
+already inside it.
+
+```bash
+docker build -t the-commons .
+docker run -p 2567:2567 the-commons     # http://localhost:2567
+```
+
+Railway, Fly and Koyeb all take it as-is. See
+[What is NOT verified](#what-is-not-verified) before you trust it.
 
 ### Playing with friends today, without hosting anything
-
-The server can serve the client itself, so the whole game is one process on one
-port. That is the easiest thing to share:
 
 ```bash
 npm run serve     # builds the client, then serves game + client on :2567
@@ -404,8 +455,7 @@ npm run share     # opens a public https:// URL that forwards to :2567
 
 `share` opens an SSH reverse tunnel to localhost.run — no account, no signup.
 It prints an `https://….lhr.life` URL; send that to a friend and you are playing
-together. A same-origin client derives `wss://` from the page automatically, so
-nothing needs configuring.
+together. Same single origin as a real deployment, so nothing needs configuring.
 
 Understand what this is before using it:
 
@@ -416,84 +466,76 @@ Understand what this is before using it:
 - Everything runs on your machine, so when you close it, the town closes.
 
 That makes it right for "let's hang out this evening" and wrong for something
-you want up permanently. For that, deploy the server properly — below.
+you want up permanently.
 
-### The failure mode, first
+### Two origins: a static client and a server elsewhere
 
-The client resolves its server URL **at build time**
-(`client/src/systems/NetworkClient.ts`). With `VITE_SERVER_URL` unset it falls
-back to `ws://localhost:2567`, so a deployed bundle tells every visitor's
-browser to connect to *their own machine*, where nothing is listening. The game
-then falls back to single-player and the HUD reads `OFFLINE`.
+If you want the client on Vercel or GitHub Pages anyway — a CDN edge near your
+players, or a domain you already have — the client can be pointed at a server at
+runtime, so this no longer requires a rebuild per server:
 
-Three things follow from that, and all three have to be true:
+- Click **OFFLINE — click to connect** in the top right and paste the server's
+  address. It is remembered, so this happens once per browser.
+- Or share a link with it already in:
+  `https://your-client.vercel.app/?server=https://your-server.onrender.com`
+- Either `https://` or `wss://` is understood; the scheme is converted for you.
 
-1. **The server must be hosted somewhere that runs a process.** Render, Railway
-   and Fly all do; configs for each are in the repo.
-2. **The URL must be `wss://`, not `ws://`.** The client page is HTTPS, so a
-   plaintext WebSocket is blocked as mixed content before it is attempted.
-3. **`VITE_SERVER_URL` must be set *before* the build.** Setting it in a
-   dashboard does nothing to a bundle that already shipped — trigger a redeploy.
+Two things have to be true and both are easy to miss:
 
-`tools/phase7_deploy.mjs` exists because every other suite runs the client from
-the Vite dev server on the same origin as the game server, which is not the
-deployed shape and would never have caught any of this. It builds the real
-bundle, serves it from a different origin, and asserts among other things that
-the localhost default did **not** ship.
+1. **The address must end up `wss://`, not `ws://`.** The page is HTTPS, so a
+   plaintext WebSocket is blocked as mixed content before it is attempted. The
+   paste box handles this; a hand-built `VITE_SERVER_URL` does not.
+2. **`ALLOWED_ORIGINS` on the server must name the client's origin**, comma
+   separated, no trailing slash. Now the request *is* cross-origin.
 
-### Server
+`VITE_SERVER_URL` still works and still wins over the page's own origin, for a
+build that knows its server in advance. It is a convenience now rather than a
+requirement — it used to be the only mechanism, which meant a bundle built
+without it silently told every visitor to connect to their own machine, and that
+is exactly what the first deployment of this game did.
 
-```bash
-# Render: push the repo, then "New > Blueprint" and pick render.yaml.
-# Fly:    fly launch --no-deploy && fly deploy
-# Railway: new service from repo; it detects the Dockerfile.
-# Locally, the same way a host runs it:
-NODE_ENV=production ALLOWED_ORIGINS=https://your-client.vercel.app \
-  npm start --workspace server
-```
-
-| Variable | Meaning |
-|---|---|
-| `PORT` | Set by the host. Defaults to 2567. |
-| `ALLOWED_ORIGINS` | Comma-separated browser origins, no trailing slash. **Unset means any site may call your server** — the server warns about this at boot in production rather than locking down silently, because a first deploy that fails closed looks like a bug in the game. |
-| `DATABASE_URL` | Postgres. Without it the JSON store is used. |
-| `DATA_DIR` | Where the JSON store writes. Point it at a mounted volume, or scores and study time reset on every deploy. |
-| `LIVEKIT_URL` / `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` | Voice transport. Unset means the mic reports unavailable, which is the current state. |
-
-### Client
-
-```bash
-VITE_SERVER_URL=wss://your-server.onrender.com npm run build --workspace client
-# publishes client/dist — on Vercel, set VITE_SERVER_URL then redeploy
-```
-
-Configure the Vercel project in its dashboard rather than with a committed
-`vercel.json`. A checked-in config silently overrides dashboard settings when
-it lands at the deployment root, which is a rude thing to do to a deployment
-that already works:
+Vercel is configured in its dashboard rather than with a committed
+`vercel.json`, because a checked-in config silently overrides dashboard settings
+when it lands at the deployment root:
 
 | Setting | Value |
 |---|---|
 | Root Directory | the repo root, **not** `client/` |
 | Build Command | `npm run build --workspace client` |
 | Output Directory | `client/dist` |
-| Environment | `VITE_SERVER_URL = wss://your-server-host` |
+| Environment | `VITE_SERVER_URL = wss://your-server-host` (optional) |
 
 Root Directory has to be the repo root because the build resolves
 `@commons/shared` through the workspace and takes its `publicDir` from the
 repo-level `assets/` folder — the maps and tilesets live outside `client/` so
 the server can read the same map JSON for authoritative collision.
 
+### Environment variables
+
+All optional. The one-service deploy needs none of them.
+
+| Variable | Meaning |
+|---|---|
+| `PORT` | Set by the host. Defaults to 2567. |
+| `ALLOWED_ORIGINS` | Comma-separated browser origins, no trailing slash. Only relevant to a cross-origin client. **Unset means any site may call your server** — the server warns about this at boot in production rather than locking down silently, because a first deploy that fails closed looks like a bug in the game. |
+| `DATABASE_URL` | Postgres. Without it the JSON store is used. |
+| `DATA_DIR` | Where the JSON store writes. Point it at a mounted volume, or scores and study time reset on every deploy. Render's free tier has no volume to point it at. |
+| `CLIENT_DIST` | Where the built client lives. Defaults to `client/dist`; the server serves API-only if that folder is absent, which is what happens when you run it next to the Vite dev server. |
+| `LIVEKIT_URL` / `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` | Voice transport. Unset means the mic reports unavailable, which is the current state. |
+
 ### What is NOT verified
 
 The `Dockerfile` has never been built: Docker is not installed on the machine
-this was developed on, and it says so at the top of the file. The server it
-starts is tested — `phase7_deploy.mjs` runs the same start command with the same
-environment variables against a real production bundle — but the image build
-itself is not. Treat your first `docker build` as the test.
+this was developed on, and it says so at the top of the file. Everything it does
+is tested by other means — `phase7b_single_origin.mjs` runs the same client
+build and the same start command and plays two browsers against the result — but
+the image build itself is not. Treat your first `docker build` as the test.
 
-`render.yaml` and `fly.toml` are likewise written from the
-providers' documented schemas and have not been run against those providers.
+`render.yaml` and `fly.toml` are written from the providers' documented schemas
+and have not been run against those providers. The commands inside `render.yaml`
+have been run: they are the ones the test suite uses, and they were checked once
+more from a clean checkout with no `node_modules` and `NODE_ENV=production` set,
+which is the state a host builds in.
 
 ## Cosmetics
 
