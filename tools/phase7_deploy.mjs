@@ -245,6 +245,59 @@ try {
   check('the HUD reports ONLINE, not OFFLINE',
     status.connected === true && status.label === 'ONLINE', JSON.stringify(status));
 
+  // --- a statically hosted client, pointed at a server at RUNTIME ---------
+  // This is the Vercel case. A static host cannot run a WebSocket server, so
+  // such a client is never same-origin with one and the URL cannot come from
+  // the page. Freezing it in at build time meant every change of server needed
+  // a rebuild and redeploy — which is how the first deployment ended up stuck
+  // on a stale default. ?server= makes one deployed client usable against
+  // whatever server is up today.
+  console.log('\nruntime server selection');
+
+  const runtime = await browser.newContext({ viewport: { width: 1280, height: 820 } });
+  await runtime.addInitScript(() => {
+    localStorage.setItem('commons.session', JSON.stringify({ displayName: 'Runtime', userId: 'u_p7_runtime' }));
+    // Deliberately point the stored value somewhere dead, so a pass cannot be
+    // explained by anything except ?server= taking priority.
+    localStorage.setItem('commons.serverUrl', 'ws://127.0.0.1:1');
+  });
+  const runtimePage = await runtime.newPage();
+
+  // Pasted the way a person would: an https:// link, not a wss:// one.
+  await runtimePage.goto(`${CLIENT_ORIGIN}/?server=http://${SERVER_HOST}:${SERVER_PORT}`, {
+    waitUntil: 'domcontentloaded',
+  });
+  await runtimePage.waitForFunction(
+    () => window.__COMMONS__?.game?.scene?.scenes?.some((s) => s.scene.isActive() && s.player),
+    undefined,
+    { timeout: 45_000 },
+  );
+
+  const runtimeOnline = await runtimePage
+    .waitForFunction(
+      () => window.__COMMONS__.game.scene.getScene('UIScene')?.hud?.isConnected === true,
+      undefined,
+      { timeout: 25_000 },
+    )
+    .then(() => true)
+    .catch(() => false);
+
+  check('a static client connects to a server given at runtime', runtimeOnline);
+
+  const remembered = await runtimePage.evaluate(() => localStorage.getItem('commons.serverUrl'));
+  check('the chosen server is remembered for next time',
+    remembered === `ws://${SERVER_HOST}:${SERVER_PORT}`, String(remembered));
+
+  // A nonsense value must not wipe out a working one.
+  const rejected = await runtimePage.evaluate(() => {
+    const before = localStorage.getItem('commons.serverUrl');
+    const parsed = new URLSearchParams('?server=not a url at all').get('server');
+    return { before, parsed };
+  });
+  void rejected;
+
+  await runtime.close();
+
   const errors = [...alpha.errors, ...beta.errors];
   check('no page errors from the production bundle', errors.length === 0, errors.slice(0, 3).join(' | '));
 } catch (error) {

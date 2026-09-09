@@ -10,6 +10,7 @@
 
 import Phaser from 'phaser';
 import type { VoiceAvailability, VoiceConnectionState } from '@commons/shared';
+import { clearStoredServerUrl, normaliseServerUrl, storedServerUrl } from '../systems/NetworkClient';
 import { COLORS, SPACING, TYPOGRAPHY, UI, hex } from '@commons/shared';
 
 export class Hud {
@@ -44,6 +45,12 @@ export class Hud {
         color: COLORS.hudText,
       })
       .setOrigin(1, 0.5);
+
+    // Clicking OFFLINE is how you point this client at a server. A statically
+    // hosted client can never be same-origin with a game server, so without an
+    // affordance here the only route was a query parameter nobody would guess.
+    this.statusLabel.setInteractive({ useHandCursor: true });
+    this.statusLabel.on('pointerdown', () => this.promptForServer());
 
     this.micPill = scene.add.graphics();
     this.micLabel = scene.add
@@ -166,13 +173,64 @@ export class Hud {
     } else {
       this.statusDot.setFillStyle(0x000000, 0);
       this.statusDot.setStrokeStyle(2, hex(COLORS.statusAfk));
-      this.statusLabel.setText('OFFLINE');
+      // Says what to do about it, rather than only that it is so.
+      this.statusLabel.setText('OFFLINE — click to connect');
     }
     this.layout();
   }
 
   get isConnected(): boolean {
     return this.connected;
+  }
+
+  /**
+   * Ask for a server, remember it, and reload into it.
+   *
+   * A browser prompt rather than a themed panel on purpose: this is plumbing a
+   * player should meet once, not part of the game, and a bespoke modal would
+   * give it more presence than it deserves. Reloading is the honest way to
+   * apply it — rooms, the jukebox clock and voice all bind to a server at
+   * startup, so reconnecting in place would leave half the game on the old one.
+   */
+  private promptForServer(): void {
+    if (this.connected) {
+      const current = storedServerUrl();
+      if (!current) return;
+      // Already connected to a server chosen by hand: offer to forget it.
+      if (window.confirm(`Connected to ${current}.\n\nGo back to this site's own server?`)) {
+        clearStoredServerUrl();
+        window.location.reload();
+      }
+      return;
+    }
+
+    const entered = window.prompt(
+      'Address of the game server to join.\n\n' +
+        'Paste the https:// link from whoever is hosting — for example the URL\n' +
+        '"npm run share" prints. Leave blank to cancel.',
+      storedServerUrl() ?? '',
+    );
+    if (entered === null) return;
+
+    if (entered.trim() === '') {
+      clearStoredServerUrl();
+      window.location.reload();
+      return;
+    }
+
+    const normalised = normaliseServerUrl(entered);
+    if (!normalised) {
+      window.alert(`That does not look like a server address:\n\n${entered}`);
+      return;
+    }
+
+    try {
+      localStorage.setItem('commons.serverUrl', normalised);
+    } catch {
+      window.alert('This browser will not let the game remember that address.');
+      return;
+    }
+    window.location.reload();
   }
 
   /** Hidden while a dialogue box is open, which would otherwise cover it. */

@@ -67,22 +67,77 @@ export interface NetworkHandlers {
   onLeave?: (code: number) => void;
 }
 
+const SERVER_URL_KEY = 'commons.serverUrl';
+
+/**
+ * Turn anything a person might paste into a WebSocket URL.
+ *
+ * People copy `https://abc.lhr.life` out of a tunnel's output, not
+ * `wss://abc.lhr.life` — so accept both schemes and both spellings, and reject
+ * anything that is not a URL rather than handing a malformed string to the
+ * socket, where it fails much later and far less clearly.
+ */
+export function normaliseServerUrl(input: string): string | null {
+  const trimmed = input.trim();
+  if (!trimmed) return null;
+
+  const withScheme = /^[a-z]+:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+
+  let parsed: URL;
+  try {
+    parsed = new URL(withScheme);
+  } catch {
+    return null;
+  }
+
+  const secure = parsed.protocol === 'https:' || parsed.protocol === 'wss:';
+  if (!secure && parsed.protocol !== 'http:' && parsed.protocol !== 'ws:') return null;
+
+  return `${secure ? 'wss' : 'ws'}://${parsed.host}`;
+}
+
+/** Forget a stored server, so the page falls back to its own origin. */
+export function clearStoredServerUrl(): void {
+  try {
+    localStorage.removeItem(SERVER_URL_KEY);
+  } catch {
+    /* nothing to forget */
+  }
+}
+
+/** The server this client is pointed at, if one was explicitly chosen. */
+export function storedServerUrl(): string | null {
+  try {
+    return localStorage.getItem(SERVER_URL_KEY);
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Server URL, in priority order:
- *   1. `localStorage['commons.serverUrl']` — a runtime override, so a client can
- *      be pointed at a staging server (or a deliberately dead port, which is how
- *      the offline-fallback test forces a connection failure) without a rebuild.
- *   2. VITE_SERVER_URL at build time.
- *   3. THE PAGE'S OWN ORIGIN, in a production build.
- *   4. Local development default.
+ *   1. `?server=` in the address bar, which is also remembered.
+ *   2. `localStorage['commons.serverUrl']` — the remembered choice, and how the
+ *      offline-fallback test forces a connection failure.
+ *   3. VITE_SERVER_URL at build time.
+ *   4. THE PAGE'S OWN ORIGIN, in a production build.
+ *   5. Local development default.
  *
- * Rule 3 is the one that matters. The game server can serve the built client
- * itself, and when it does there is exactly one origin — so the correct server
- * URL is simply "wherever this page came from". No build-time variable to
- * forget, no CORS, and the scheme follows the page, so an HTTPS deployment gets
- * wss:// automatically instead of a ws:// URL the browser blocks as mixed
- * content. Shipping a bundle that hardcoded localhost is what made the first
- * deployment tell every visitor to connect to their own machine.
+ * Rules 1 and 4 are the ones that matter, and they cover the two ways this game
+ * actually gets played.
+ *
+ * Rule 4: the game server can serve the built client itself, and when it does
+ * there is exactly one origin — so the right server URL is "wherever this page
+ * came from". No build-time variable to forget, no CORS, and the scheme follows
+ * the page, so HTTPS gets wss:// rather than a ws:// URL the browser blocks as
+ * mixed content.
+ *
+ * Rule 1 exists because a statically hosted client (Vercel, GitHub Pages) can
+ * never be same-origin with a game server — those hosts do not run persistent
+ * WebSocket processes. Freezing the URL in at build time meant every change of
+ * server needed a rebuild and redeploy, which is why the first deployment sat
+ * on a stale localhost default. A URL given at runtime lets one deployed client
+ * point at whatever server is up today, including a temporary tunnel.
  *
  * The dev default is reached only when `import.meta.env.DEV` is true. Vite
  * replaces that with `false` in a production build and drops the branch, so the
@@ -90,7 +145,19 @@ export interface NetworkHandlers {
  */
 export function resolveServerUrl(): string {
   try {
-    const override = localStorage.getItem('commons.serverUrl');
+    const requested = new URLSearchParams(window.location.search).get('server');
+    if (requested) {
+      const normalised = normaliseServerUrl(requested);
+      if (normalised) {
+        // Remembered, so a shared link works once and then keeps working
+        // without the query string trailing behind it forever.
+        localStorage.setItem(SERVER_URL_KEY, normalised);
+        return normalised;
+      }
+      console.warn(`[net] ignoring unusable ?server= value: ${requested}`);
+    }
+
+    const override = localStorage.getItem(SERVER_URL_KEY);
     if (override) return override;
   } catch {
     /* private windows throw on storage access; fall through */

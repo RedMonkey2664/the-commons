@@ -368,6 +368,30 @@ stateful process. Rooms hold player positions, the jukebox clock and open
 WebSockets in memory, so it cannot run on serverless functions — Vercel hosts
 the client fine and cannot host the server at all.
 
+### Vercel (or any static host) + a real server
+
+A static host cannot run the game server — Vercel serves files and serverless
+functions, and a Colyseus room is a long-lived process holding state in memory.
+So a client hosted there is never same-origin with a server, and the address has
+to come from somewhere else.
+
+It comes from the player, at runtime:
+
+- Click **OFFLINE — click to connect** in the top right and paste the server's
+  address. It is remembered, so this happens once per browser.
+- Or share a link with it already in: `https://your-client.vercel.app/?server=https://abc.lhr.life`
+- Paste either an `https://` or a `wss://` address; both are understood, and the
+  scheme is converted for you.
+
+This is why the URL is no longer frozen in at build time. It used to be, which
+meant changing servers required a rebuild and a redeploy — and a bundle built
+without the variable set silently told every visitor to connect to their own
+machine, which is exactly what the first deployment did.
+
+`VITE_SERVER_URL` still works and still wins over the page's own origin, so a
+build that knows its server can bake one in. It is now a convenience rather than
+a requirement.
+
 ### Playing with friends today, without hosting anything
 
 The server can serve the client itself, so the whole game is one process on one
