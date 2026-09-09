@@ -6,6 +6,9 @@
  */
 
 import { createServer } from 'node:http';
+import { existsSync } from 'node:fs';
+import { dirname as pathDirname, join as joinPath, resolve as resolvePath } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import cors from 'cors';
 import express from 'express';
 import { Server, matchMaker } from 'colyseus';
@@ -22,6 +25,8 @@ import { ZoneRoom } from './rooms/ZoneRoom.js';
 import { MinigameRoom } from './rooms/MinigameRoom.js';
 import { loadZoneMap } from './world/zoneMaps.js';
 import { closeStore, getStore, initStore } from './db/client.js';
+
+const dirnameOf = (url: string) => pathDirname(fileURLToPath(url));
 
 const PORT = Number(process.env['PORT'] ?? 2567);
 
@@ -288,6 +293,35 @@ app.get('/study/:userId', async (request, response) => {
     response.status(500).json({ error: (error as Error).message });
   }
 });
+
+/**
+ * Serve the built client, when one has been built.
+ *
+ * This is what collapses the deployment into a single origin: one process, one
+ * URL, one link to send someone. It removes the two failure modes that made the
+ * first deploy unreachable — a server URL baked in at build time, and a CORS
+ * allowlist to keep in step — because a same-origin client derives its server
+ * URL from the page it was served by.
+ *
+ * Mounted AFTER the API routes so /health, /scores and the rest keep their
+ * paths, and skipped entirely when client/dist does not exist so that running
+ * the dev server alongside Vite behaves exactly as before.
+ */
+const CLIENT_DIST = process.env['CLIENT_DIST']
+  ? resolvePath(process.env['CLIENT_DIST'])
+  : resolvePath(dirnameOf(import.meta.url), '..', '..', 'client', 'dist');
+
+if (existsSync(CLIENT_DIST)) {
+  app.use(express.static(CLIENT_DIST));
+  // Single-page app: anything not matched above is the game's own index.html.
+  // Colyseus owns /matchmake, so it must not be swallowed here.
+  app.get(/^(?!\/matchmake).*/, (_request, response) => {
+    response.sendFile(joinPath(CLIENT_DIST, 'index.html'));
+  });
+  console.log(`  [client] serving the built client from ${CLIENT_DIST}`);
+} else {
+  console.log('  [client] no client/dist — API only (run the Vite dev server separately)');
+}
 
 const httpServer = createServer(app);
 

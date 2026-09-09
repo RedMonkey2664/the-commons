@@ -73,7 +73,20 @@ export interface NetworkHandlers {
  *      be pointed at a staging server (or a deliberately dead port, which is how
  *      the offline-fallback test forces a connection failure) without a rebuild.
  *   2. VITE_SERVER_URL at build time.
- *   3. Local development default.
+ *   3. THE PAGE'S OWN ORIGIN, in a production build.
+ *   4. Local development default.
+ *
+ * Rule 3 is the one that matters. The game server can serve the built client
+ * itself, and when it does there is exactly one origin — so the correct server
+ * URL is simply "wherever this page came from". No build-time variable to
+ * forget, no CORS, and the scheme follows the page, so an HTTPS deployment gets
+ * wss:// automatically instead of a ws:// URL the browser blocks as mixed
+ * content. Shipping a bundle that hardcoded localhost is what made the first
+ * deployment tell every visitor to connect to their own machine.
+ *
+ * The dev default is reached only when `import.meta.env.DEV` is true. Vite
+ * replaces that with `false` in a production build and drops the branch, so the
+ * localhost string is not merely unused in a deployed bundle — it is absent.
  */
 export function resolveServerUrl(): string {
   try {
@@ -82,10 +95,15 @@ export function resolveServerUrl(): string {
   } catch {
     /* private windows throw on storage access; fall through */
   }
-  return (import.meta.env['VITE_SERVER_URL'] as string | undefined) ?? 'ws://localhost:2567';
-}
 
-export const DEFAULT_SERVER_URL = 'ws://localhost:2567';
+  const configured = import.meta.env['VITE_SERVER_URL'] as string | undefined;
+  if (configured) return configured;
+
+  if (import.meta.env.DEV) return 'ws://localhost:2567';
+
+  const { protocol, host } = window.location;
+  return `${protocol === 'https:' ? 'wss' : 'ws'}://${host}`;
+}
 
 export class NetworkClient {
   private readonly client: Client;

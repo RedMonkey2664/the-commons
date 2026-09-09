@@ -43,6 +43,13 @@ export class MemoryMatchScene extends BaseMinigameScene {
   private cards: Card[] = [];
   private firstPick?: Card;
   private locked = false;
+  /**
+   * The mismatched pair currently being held face-up.
+   *
+   * Kept as state rather than only captured in the timer closure, because a
+   * click during the hold has to be able to end it early.
+   */
+  private pendingMismatch?: { first: Card; second: Card };
   private matches = 0;
   private mismatches = 0;
   private startedAt = 0;
@@ -89,6 +96,7 @@ export class MemoryMatchScene extends BaseMinigameScene {
   override onEnd(): void {
     this.flipTimer?.remove();
     this.flipTimer = undefined;
+    this.pendingMismatch = undefined;
   }
 
   // -- deck -----------------------------------------------------------------
@@ -172,7 +180,14 @@ export class MemoryMatchScene extends BaseMinigameScene {
   // -- play -----------------------------------------------------------------
 
   private flip(index: number): void {
-    if (this.locked) return;
+    // A click during the mismatch hold ENDS the hold and counts, rather than
+    // being thrown away. The hold used to swallow every click for 700ms with no
+    // dimming, no cursor change and no sound — at ordinary clicking speed about
+    // a third of all clicks vanished, which reads as "the tiles don't click"
+    // rather than as a deliberate pause. A player who has already seen the two
+    // cards should not be made to wait to act on that.
+    if (this.locked) this.resolveMismatch();
+
     const card = this.cards[index];
     if (!card || card.matched || card.faceUp) return;
 
@@ -201,12 +216,30 @@ export class MemoryMatchScene extends BaseMinigameScene {
     // Mismatch: hold both face-up briefly so the player can actually see them.
     this.mismatches += 1;
     this.locked = true;
+    this.pendingMismatch = { first, second: card };
     this.refreshScore();
-    this.flipTimer = this.time.delayedCall(RULES.mismatchHoldMs, () => {
-      this.showFace(first, false);
-      this.showFace(card, false);
-      this.locked = false;
-    });
+    this.statusText.setText('not a pair');
+    this.flipTimer = this.time.delayedCall(RULES.mismatchHoldMs, () => this.resolveMismatch());
+  }
+
+  /**
+   * Turn the held pair back over and unlock.
+   *
+   * Called by the hold timer, or early by a click that would otherwise have
+   * been discarded. Safe to call when nothing is pending.
+   */
+  private resolveMismatch(): void {
+    this.flipTimer?.remove();
+    this.flipTimer = undefined;
+
+    const pending = this.pendingMismatch;
+    this.pendingMismatch = undefined;
+    this.locked = false;
+
+    if (!pending) return;
+    this.showFace(pending.first, false);
+    this.showFace(pending.second, false);
+    this.statusText.setText('click a card   ·   ESC to quit');
   }
 
   private showFace(card: Card, faceUp: boolean): void {

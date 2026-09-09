@@ -240,6 +240,60 @@ try {
     layout.distinct === layout.count && layout.first.x > 0 && layout.first.y > 0,
     JSON.stringify(layout));
 
+  // A mismatch holds both cards face-up for a moment. That hold used to swallow
+  // every click until it expired — silently, with no dimming or cursor change —
+  // so at ordinary clicking speed about a third of all clicks did nothing and
+  // the game felt broken. The existing solve below only ever clicks MATCHING
+  // pairs, so it never produced a mismatch and never saw this.
+  const mismatch = await alpha.page.evaluate(() => {
+    const scene = window.__COMMONS__.game.scene.getScene('MemoryMatchScene');
+    const a = scene.cards[0];
+    const b = scene.cards.find((c) => c.faceIndex !== a.faceIndex);
+    const c = scene.cards.find((x) => x !== a && x !== b);
+    return {
+      a: { x: a.container.x, y: a.container.y },
+      b: { x: b.container.x, y: b.container.y },
+      thirdIndex: c.index,
+      third: { x: c.container.x, y: c.container.y },
+    };
+  });
+
+  await alpha.page.mouse.click(mismatch.a.x, mismatch.a.y);
+  await alpha.page.waitForTimeout(80);
+  await alpha.page.mouse.click(mismatch.b.x, mismatch.b.y);
+  await alpha.page.waitForTimeout(60);
+
+  const heldState = await alpha.page.evaluate(
+    () => window.__COMMONS__.game.scene.getScene('MemoryMatchScene').locked,
+  );
+  check('a mismatch holds the pair face-up', heldState === true, String(heldState));
+
+  // Click a third card WHILE the hold is running. It must count.
+  await alpha.page.mouse.click(mismatch.third.x, mismatch.third.y);
+  await alpha.page.waitForTimeout(120);
+
+  const duringHold = await alpha.page.evaluate((i) => {
+    const scene = window.__COMMONS__.game.scene.getScene('MemoryMatchScene');
+    return { flipped: scene.cards[i].faceUp, locked: scene.locked };
+  }, mismatch.thirdIndex);
+
+  check('a click during the mismatch hold is not thrown away',
+    duringHold.flipped === true, JSON.stringify(duringHold));
+  check('clicking during the hold ends it', duringHold.locked === false,
+    JSON.stringify(duringHold));
+
+  // Back to a clean board for the solve below.
+  await alpha.page.evaluate(() => {
+    const scene = window.__COMMONS__.game.scene.getScene('MemoryMatchScene');
+    scene.resolveMismatch();
+    scene.firstPick = undefined;
+    scene.cards.forEach((c) => {
+      if (!c.matched) scene.showFace(c, false);
+    });
+    scene.mismatches = 0;
+  });
+  await alpha.page.waitForTimeout(200);
+
   // Solve it by CLICKING, at real screen coordinates — the same path a player
   // takes. Pairs are looked up so the run is deterministic; the interaction is
   // not simulated.

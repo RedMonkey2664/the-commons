@@ -8,6 +8,7 @@
  */
 
 import { ASSET_KEYS } from './art/placeholderArt';
+import { resolveServerUrl } from './systems/NetworkClient';
 
 const STORAGE_KEY = 'commons.session';
 
@@ -80,15 +81,17 @@ class Session {
     return this.state.userId!;
   }
 
-  /** Where the game server lives. Overridable for staging and tests. */
+  /**
+   * Where the game server lives.
+   *
+   * Delegates rather than reimplementing. This getter used to carry its own
+   * copy of the resolution rules, and since minigames, the score client and the
+   * voice client all read it, the copy here was in practice the one that
+   * mattered — so improving the rules in NetworkClient changed nothing for most
+   * of the game. One definition, in NetworkClient.resolveServerUrl.
+   */
   get serverUrl(): string {
-    try {
-      const override = localStorage.getItem('commons.serverUrl');
-      if (override) return override;
-    } catch {
-      /* private windows throw on storage access */
-    }
-    return (import.meta.env['VITE_SERVER_URL'] as string | undefined) ?? 'ws://localhost:2567';
+    return resolveServerUrl();
   }
 
   /**
