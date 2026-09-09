@@ -13,9 +13,9 @@ The point is **presence, not progression** — see
 
 | Phase | Scope | State |
 |---|---|---|
-| **0** | Single-player skeleton: Town Square, WASD grid movement, collision, camera | **Done** — 24/24 smoke checks |
-| **1** | Colyseus server, multiplayer sync in Town Square | **Done** — 26/26 sync checks |
-| **2** | All zones + zone transitions + NPC dialogue + friends list | **Done** — 42/42 world checks |
+| **0** | Single-player skeleton: Town Square, WASD grid movement, collision, camera | **Done** — 27/27 smoke checks |
+| **1** | Colyseus server, multiplayer sync in Town Square | **Done** — 27/27 sync checks |
+| **2** | All zones + zone transitions + NPC dialogue + friends list | **Done** — 43/43 world checks |
 | **3** | Persistence, arcade minigames, study tracking, text chat | **Done** — 20/20 arcade checks |
 | **4** | Shared jukebox + voice policy | **Done** — 20/20 music checks |
 | **5** | Remaining minigames, cosmetics, ambient life, sound | **Done** — 37/37 polish checks |
@@ -27,14 +27,22 @@ The point is **presence, not progression** — see
 | 7a | Actually hosting it | **Ready** — push to a host, set nothing; see [Deploying](#deploying) |
 | 5a | Real pixel art to replace the procedural placeholders | **Blocked** — needs source art |
 
-224 checks across the nine suites. Every one drives a real browser against a
+229 checks across the nine suites. Every one drives a real browser against a
 real server and asserts on real game state; none of them stub the game.
 
+Enlarging the town square broke eleven of them, and every one broke the same
+way: a map coordinate restated in a test. "Town square is 40x30", "sign_welcome
+is at (20,20)", "the server's column is x=19" — all true when written, none of
+them checked by anything. They now read the door, the spawn and the sign out of
+the loaded map, which is the same lesson as
+[Where the config claim leaked](#where-the-config-claim-leaked), learned again
+in the test suite rather than the engine.
+
 `phase1_sync` is the one that is not reliably green on every machine: on
-Windows it has come back 25/26 twice for two different environmental reasons —
-once a remote tile lagging one step behind under load, once headless Chromium
-having no audio device for the WebAudio context. Both are the harness meeting
-the machine, not the game; a re-run passes the check that failed.
+Windows it has come back one check short twice for two different environmental
+reasons — once a remote tile lagging a step behind under load, once headless
+Chromium having no audio device for the WebAudio context. Both are the harness
+meeting the machine, not the game; a re-run passes the check that failed.
 
 **There is no Phase 6 in the specs.** 08's roadmap ends at Phase 5, whose last
 bullet is "anything you think of after actually using it with friends — this is
@@ -52,8 +60,11 @@ the Greenhouse — all connected by doors you walk onto, with a fade transition 
 back at the door you came out of. Grid-based WASD movement with tile collision,
 bump feedback and turn-in-place. Space reads signposts and talks to NPCs through
 a dialogue box; "!" bubbles mark anything interactable. Sit at a library focus
-pod and your status becomes `studying` — no start button, just sitting down.
-Esc opens the friends panel showing who is in the room with you.
+pod and your status becomes `studying` — no start button, just sitting down —
+and a **focus timer** appears with the session running, how long you have been
+in town today, and your all-time focused total. `P` opens **your stats**: focus
+sessions, average length, where you study most, games played, best scores,
+cosmetics earned. Esc opens the friends panel showing who is in the room.
 
 The Arcade has seven working cabinets: **Memory Match**, **Retro Runner** and
 **Stack Tower** (solo), **Trivia Blitz**, **Reaction Tap** and **Word Rush** (up
@@ -145,6 +156,7 @@ Both need `npx playwright install chromium` once. Add `--headed` to watch.
 | `Space` (or `Enter`) | Interact / advance dialogue |
 | `Enter` | Chat (Enter sends, Esc cancels) |
 | `M` | Toggle microphone |
+| `P` | Your stats |
 | `Esc` | Friends panel |
 
 Tap a direction you aren't facing to **turn in place**; hold it to walk.
@@ -273,6 +285,21 @@ Two files, and only two, hold tunable numbers:
 Nothing else in the codebase should contain a magic timing or color. Values
 added beyond the specs are commented `[ADDED]` with the reason.
 
+### World brightness
+
+`WORLD_BRIGHTNESS` in `shared/designTokens.ts` is one number that lifts the
+whole world palette. It exists because the palette is authored at the lightness
+tiles are *drawn* at, and every tile then stacks grain, seams and cast shadows
+on top — so the assembled scene reads considerably darker than the swatches do,
+and correcting that by hand means re-authoring sixty colours and getting the
+relationships between them wrong.
+
+It scales RGB rather than mixing toward white, so hue and saturation survive and
+colours brighten instead of washing out. UI chrome is deliberately NOT scaled:
+it is read *against* the world rather than being part of it, and lifting it
+costs the contrast that makes it legible. 1 is the palette as written; above
+about 1.25 the paving starts to clip toward flat white.
+
 ### Viewport
 
 The canvas **resizes to the window** (`Phaser.Scale.RESIZE`) rather than
@@ -371,6 +398,29 @@ implementation of that interface, not an edit to the room.
 
 ---
 
+## Time, and what you did with it
+
+Study time was recorded from Phase 3 and never shown back. Two surfaces now
+read it, and they deliberately answer different questions:
+
+**The focus timer** (`client/src/ui/FocusTimer.ts`) appears when you sit at a
+focus pod and shows the session running, this visit's length, and your all-time
+focused total. The server stays the authority: it opens a session when you sit
+and writes it when you stand, so the panel shows `total + live` while seated and
+re-reads the persisted figure once the write lands. A client-side clock keeping
+its own running total would drift from the stored one and then disagree with the
+stats panel about the same number.
+
+**The stats panel** (`P`) is the record: focus sessions, average length, the
+zones you actually study in, games played, best score per cabinet, cosmetics
+earned, people met. Every figure comes from `/progress` and `/study` except two
+that are honestly labelled as this-browser facts — how long this visit has
+lasted, and how many people this browser has shared a room with.
+
+11 puts presence over progression, so both read as an account of time spent
+rather than a score to climb. There is no streak, no daily goal and no number
+that goes down if you stop.
+
 ## Deploying
 
 The whole game deploys as **one service**: the server serves the client it was
@@ -456,6 +506,20 @@ npm run share     # opens a public https:// URL that forwards to :2567
 `share` opens an SSH reverse tunnel to localhost.run — no account, no signup.
 It prints an `https://….lhr.life` URL; send that to a friend and you are playing
 together. Same single origin as a real deployment, so nothing needs configuring.
+
+**It needs outbound port 22**, which plenty of campus, office and hotel networks
+block — the symptom is `connect to address … port 22: Connection timed out` and
+no URL ever printed, while ordinary HTTPS works fine. Two ways around it:
+
+```bash
+# Same wifi as your friends: skip tunnelling entirely.
+npm run serve      # then send them http://<your-lan-ip>:2567
+                   # ipconfig / ifconfig to find it; some guest networks
+                   # isolate clients from each other, which blocks this too
+
+# A public link over 443 instead of 22:
+npx -y cloudflared tunnel --url http://localhost:2567
+```
 
 Understand what this is before using it:
 

@@ -285,17 +285,25 @@ try {
   console.log('\nmovement sync');
   // West along the plaza from the shared spawn: clear of the fountain rim,
   // the benches and the welcome sign.
+  // Both clients start on the map's spawn tile; every assertion below is
+  // relative to it rather than to the column the square used to spawn on.
+  const spawnTile = { x: a.tile.x, y: a.tile.y };
+
   await holdKey(alpha, 'KeyA', 600);
   a = await netState(alpha);
   b = await waitFor(() => netState(beta), (s) => sameTile(s.remotes[0], a.tile));
 
-  check('A actually moved', a.tile.x < 19, `x=${a.tile.x}`);
+  check('A actually moved', a.tile.x < spawnTile.x, `x=${a.tile.x} from ${spawnTile.x}`);
   check("B's copy of A matches A's tile", sameTile(b.remotes[0], a.tile),
     `B saw ${JSON.stringify(b.remotes[0])}, A is ${JSON.stringify(a.tile)}`);
   check("B's copy of A faces left", b.remotes[0]?.facing === 'left', b.remotes[0]?.facing);
 
   // A must not have moved B.
-  check('A is not affected by B', b.tile.x === 19 && b.tile.y === 20, JSON.stringify(b.tile));
+  check(
+    'A is not affected by B',
+    b.tile.x === spawnTile.x && b.tile.y === spawnTile.y,
+    `${JSON.stringify(b.tile)} vs spawn ${JSON.stringify(spawnTile)}`,
+  );
 
   // --- turning in place propagates ---------------------------------------
   console.log('\nfacing sync');
@@ -308,16 +316,24 @@ try {
   // --- server-authoritative collision ------------------------------------
   console.log('\nserver-authoritative collision');
   // Walk B east into sign_welcome at (20,20) from spawn (19,20).
+  // Read rather than restated: this asserted "x === 19" for a spawn column that
+  // moved when the square was redrawn, and said the signpost had been walked
+  // through when in fact the test was looking at the wrong tile.
+  const blockedFrom = b.tile.x;
   await holdKey(beta, 'KeyD', 500);
   b = await netState(beta);
   a = await waitFor(() => netState(alpha), (s) => s.remotes[0]?.facing === 'right');
 
-  check('B did not walk through the signpost', b.tile.x === 19, `x=${b.tile.x}`);
-  check("A's copy of B also stayed put", a.remotes[0]?.x === 19, `x=${a.remotes[0]?.x}`);
+  check('B did not walk through the signpost', b.tile.x === blockedFrom, `x=${b.tile.x}`);
+  check("A's copy of B also stayed put", a.remotes[0]?.x === blockedFrom, `x=${a.remotes[0]?.x}`);
   check("A sees B turned to face the obstacle", a.remotes[0]?.facing === 'right', a.remotes[0]?.facing);
 
   // --- a client cannot set its own position ------------------------------
   console.log('\nposition authority');
+  // Where the SERVER thinks B is, before anything is forged. Every assertion
+  // below is relative to this rather than to a hard-coded tile.
+  const authoritative = { x: b.tile.x, y: b.tile.y };
+
   // Force B's LOCAL position somewhere it never legitimately walked. The server
   // knows nothing about this, so its next validated move must overrule it.
   await beta.page.evaluate((key) => {
@@ -330,13 +346,29 @@ try {
 
   // A never saw the bogus position, because it was never sent.
   a = await netState(alpha);
-  check("the forced position never reached A", a.remotes[0]?.x === 19, `A saw x=${a.remotes[0]?.x}`);
+  check(
+    'the forced position never reached A',
+    a.remotes[0]?.x === authoritative.x && a.remotes[0]?.y === authoritative.y,
+    `A saw ${a.remotes[0]?.x},${a.remotes[0]?.y}, server had ${authoritative.x},${authoritative.y}`,
+  );
 
   // Now B sends a legitimate intent. The server computes from ITS position.
   await holdKey(beta, 'KeyW', 200);
-  b = await waitFor(() => netState(beta), (s) => s.tile.x === 19, 5000);
-  check('server overruled the forged position', b.tile.x === 19, JSON.stringify(b.tile));
-  check('server put B back on its own authoritative column', b.tile.y <= 20 && b.tile.y >= 18, JSON.stringify(b.tile));
+  b = await waitFor(() => netState(beta), (s) => s.tile.x === authoritative.x, 5000);
+  check('server overruled the forged position', b.tile.x === authoritative.x, JSON.stringify(b.tile));
+  // A 200ms hold is one or two 130ms steps depending on where in the tween it
+  // lands, so the assertion is "walked north from where the SERVER had it",
+  // not an exact tile — and emphatically nowhere near the forged (5,5).
+  check(
+    'server put B back on its own authoritative column',
+    Math.abs(b.tile.y - authoritative.y) <= 2 && b.tile.y <= authoritative.y,
+    `${JSON.stringify(b.tile)} vs ${JSON.stringify(authoritative)}`,
+  );
+  check(
+    'B is nowhere near the position it forged',
+    Math.abs(b.tile.x - 5) + Math.abs(b.tile.y - 5) > 4,
+    JSON.stringify(b.tile),
+  );
 
   // --- screenshots --------------------------------------------------------
   const shotDir = resolve(repoRoot, 'tools', 'screenshots');

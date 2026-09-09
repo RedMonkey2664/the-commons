@@ -162,18 +162,58 @@ try {
   console.log('\ntown square');
   let s = await worldState(page);
   check('spawns in Town Square', s.scene === 'TownSquareScene');
-  check('town square is 40x30', s.mapSize.w === 40 && s.mapSize.h === 30, JSON.stringify(s.mapSize));
+  // A floor, not an equality. The map is authored in
+  // tools/generate_placeholder_maps.py and is meant to grow; pinning the exact
+  // dimensions here just means this suite fails every time the square is
+  // edited, which is how it read "40x30" long after it stopped being true.
+  check(
+    'town square loaded a full-size map',
+    s.mapSize.w >= 40 && s.mapSize.h >= 30,
+    JSON.stringify(s.mapSize),
+  );
   check('the square parses its interactables', s.interactables >= 12, `got ${s.interactables}`);
 
   // --- every zone, out and back -------------------------------------------
   // door tile, the tile you approach it from, and the direction you walk.
-  const routes = [
-    { zone: 'LibraryScene', name: 'Library', door: { x: 6, y: 13 }, from: { x: 6, y: 14 }, dir: 'up', back: { x: 6, y: 14 } },
-    { zone: 'CafeScene', name: 'Cafe', door: { x: 33, y: 13 }, from: { x: 33, y: 14 }, dir: 'up', back: { x: 33, y: 14 } },
-    { zone: 'ArcadeScene', name: 'Arcade', door: { x: 19, y: 26 }, from: { x: 19, y: 25 }, dir: 'down', back: { x: 19, y: 25 } },
-    { zone: 'ParkScene', name: 'Park', door: { x: 19, y: 1 }, from: { x: 19, y: 2 }, dir: 'up', back: { x: 19, y: 2 } },
-    { zone: 'StudyRoomScene', name: 'Study Room', door: { x: 23, y: 26 }, from: { x: 23, y: 25 }, dir: 'down', back: { x: 23, y: 25 } },
-  ];
+  // Read out of the map rather than restated here. Door positions belong to
+  // tools/generate_placeholder_maps.py, and a second copy in a test is a copy
+  // that goes stale silently — the approach tile and the direction to walk are
+  // both derivable from the door and the collision map anyway.
+  const SCENE_FOR_ZONE = {
+    library: { zone: 'LibraryScene', name: 'Library' },
+    cafe: { zone: 'CafeScene', name: 'Cafe' },
+    arcade: { zone: 'ArcadeScene', name: 'Arcade' },
+    park: { zone: 'ParkScene', name: 'Park' },
+    study_room: { zone: 'StudyRoomScene', name: 'Study Room' },
+  };
+
+  const doors = await page.evaluate(() => {
+    const scene = window.__COMMONS__.game.scene.getScene('TownSquareScene');
+    return scene.zoneMap.interactables
+      .filter((o) => o.kind === 'door')
+      .map((o) => {
+        const door = { x: o.tile.x, y: o.tile.y };
+        // The one neighbouring tile you can actually stand on to use it.
+        const neighbours = [
+          { dir: 'up', from: { x: door.x, y: door.y + 1 } },
+          { dir: 'down', from: { x: door.x, y: door.y - 1 } },
+          { dir: 'left', from: { x: door.x + 1, y: door.y } },
+          { dir: 'right', from: { x: door.x - 1, y: door.y } },
+        ].filter((n) => scene.zoneMap.isWalkable(n.from));
+        return {
+          target: o.props?.targetZone,
+          door,
+          from: neighbours[0]?.from ?? null,
+          dir: neighbours[0]?.dir ?? null,
+        };
+      });
+  });
+
+  const routes = doors
+    .filter((d) => SCENE_FOR_ZONE[d.target] && d.from)
+    .map((d) => ({ ...SCENE_FOR_ZONE[d.target], door: d.door, from: d.from, dir: d.dir, back: d.from }));
+
+  check('every walkable zone door was found in the map', routes.length === 5, `${routes.length}`);
 
   for (const route of routes) {
     console.log(`\n-> ${route.name}`);
@@ -211,7 +251,8 @@ try {
   // --- sitting -------------------------------------------------------------
   console.log('\nsitting');
   await dismissDialogue(page);
-  await stepOnto(page, { x: 6, y: 14 }, 'up');
+  const libraryRoute = routes.find((r) => r.zone === 'LibraryScene');
+  await stepOnto(page, libraryRoute.from, libraryRoute.dir);
   await waitForScene(page, 'LibraryScene');
   await dismissDialogue(page);
 
@@ -286,11 +327,19 @@ try {
   mkdirSync(shotDir, { recursive: true });
   await page.screenshot({ path: resolve(shotDir, 'phase2_library.png') });
 
-  for (const [zone, from, dir, file] of [
-    ['CafeScene', { x: 33, y: 14 }, 'up', 'phase2_cafe.png'],
-    ['ParkScene', { x: 19, y: 2 }, 'up', 'phase2_park.png'],
-    ['ArcadeScene', { x: 19, y: 25 }, 'down', 'phase2_arcade.png'],
-  ]) {
+  // Same routes as above, so these follow the map too.
+  const shots = [
+    ['CafeScene', 'phase2_cafe.png'],
+    ['ParkScene', 'phase2_park.png'],
+    ['ArcadeScene', 'phase2_arcade.png'],
+  ]
+    .map(([zone, file]) => {
+      const route = routes.find((r) => r.zone === zone);
+      return route ? [zone, route.from, route.dir, file] : null;
+    })
+    .filter(Boolean);
+
+  for (const [zone, from, dir, file] of shots) {
     await dismissDialogue(page);
     // Get back to the square first.
     const cur = await worldState(page);

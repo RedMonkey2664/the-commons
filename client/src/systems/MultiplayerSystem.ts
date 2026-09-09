@@ -36,6 +36,8 @@ export interface MultiplayerSystemOptions {
   zoneName: string;
   /** Called when someone joins or leaves, for the "friend joined" popup. */
   onRosterChange?: (event: 'join' | 'leave', displayName: string) => void;
+  /** Someone appeared, in world pixels. The scene decides what that looks like. */
+  onRemoteAppeared?: (x: number, y: number) => void;
 }
 
 export class MultiplayerSystem {
@@ -45,6 +47,7 @@ export class MultiplayerSystem {
   private readonly player: Player;
   private readonly zoneName: string;
   private readonly onRosterChange?: (event: 'join' | 'leave', displayName: string) => void;
+  private readonly onRemoteAppeared?: (x: number, y: number) => void;
 
   /** Suppresses the join popup for players already present when we arrived. */
   private initialSyncDone = false;
@@ -65,6 +68,7 @@ export class MultiplayerSystem {
     this.player = options.player;
     this.zoneName = options.zoneName;
     this.onRosterChange = options.onRosterChange;
+    this.onRemoteAppeared = options.onRemoteAppeared;
 
     // Anyone already in the room arrives as a burst of onAdd calls; treat the
     // rest of this tick as initial sync so we don't pop a banner per person.
@@ -129,7 +133,12 @@ export class MultiplayerSystem {
     // after they leave. Replaced by a real friends table in Phase 3.
     rememberPerson(state.displayName, this.zoneName);
 
-    if (this.initialSyncDone) this.onRosterChange?.('join', state.displayName);
+    // Only a genuine arrival gets a flourish. Everyone already standing there
+    // when you walk in would otherwise set off a screen full of rings.
+    if (this.initialSyncDone) {
+      this.onRosterChange?.('join', state.displayName);
+      this.onRemoteAppeared?.(remote.sprite.x, remote.sprite.y);
+    }
   }
 
   handlePlayerChange(state: NetworkPlayer, sessionId: string): void {

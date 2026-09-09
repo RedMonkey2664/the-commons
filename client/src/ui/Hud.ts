@@ -62,7 +62,7 @@ export class Hud {
       .setOrigin(1, 0.5);
 
     this.hint = scene.add
-      .text(0, 0, 'WASD move   SPACE interact   ENTER chat   M mic   ESC friends', {
+      .text(0, 0, 'WASD move   SPACE interact   ENTER chat   M mic   P stats   ESC friends', {
         fontFamily: TYPOGRAPHY.dialogueFont,
         fontSize: `${TYPOGRAPHY.hudFontSize}px`,
         color: COLORS.hudText,

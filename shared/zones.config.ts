@@ -17,15 +17,19 @@ export const ZONES: ZoneConfig[] = [
     tilemapKey: 'town_square_map',
     mapFile: 'maps/town_square.json',
     sceneKey: 'TownSquareScene',
-    spawnPoint: { x: 19, y: 20 },
+    spawnPoint: { x: 27, y: 26 },
+    // One tile out from each door, on the apron in front of it. These move
+    // WITH the map: tools/generate_placeholder_maps.py owns where the doors
+    // are, and an entry point left behind lands an arriving player inside a
+    // wall. verify_maps.mjs is what catches that.
     entryPoints: {
-      library: { x: 6, y: 14 },
-      cafe: { x: 33, y: 14 },
-      park: { x: 19, y: 2 },
-      arcade: { x: 19, y: 25 },
-      study_room: { x: 23, y: 25 },
-      greenhouse: { x: 7, y: 7 },
-      skyline_terrace: { x: 36, y: 14 },
+      library: { x: 7, y: 18 },
+      cafe: { x: 47, y: 18 },
+      park: { x: 27, y: 2 },
+      arcade: { x: 25, y: 33 },
+      study_room: { x: 31, y: 33 },
+      greenhouse: { x: 8, y: 10 },
+      skyline_terrace: { x: 51, y: 18 },
     },
     ambientSound: 'ambient_outdoor',
     interactables: [

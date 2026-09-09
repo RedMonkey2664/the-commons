@@ -62,6 +62,11 @@ function writeKnown(people: KnownPerson[]): void {
   }
 }
 
+/** How many distinct people this browser has shared a room with (stats panel). */
+export function knownPeopleCount(): number {
+  return readKnown().length;
+}
+
 /** Remember someone we shared a room with, so they show up offline later. */
 export function rememberPerson(displayName: string, zone: string): void {
   const people = readKnown().filter((p) => p.displayName !== displayName);

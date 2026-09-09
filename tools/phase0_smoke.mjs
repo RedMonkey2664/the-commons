@@ -82,6 +82,32 @@ function startDevServer() {
 
 const SCENE_KEY = 'TownSquareScene';
 
+/**
+ * Where to stand to face a named interactable, read from the loaded map.
+ *
+ * The map is authored in tools/generate_placeholder_maps.py and moves when the
+ * town is redesigned. Restating "sign_welcome is at (20,20)" here is a second
+ * copy of that fact which nothing keeps in step — and it silently became wrong
+ * the first time the square was enlarged.
+ */
+async function facingSpot(page, sceneKey, id) {
+  return page.evaluate(({ sceneKey, id }) => {
+    const scene = window.__COMMONS__.game.scene.getScene(sceneKey);
+    const object = scene.zoneMap.interactables.find((o) => o.id === id);
+    if (!object) return null;
+
+    const options = [
+      { dir: 'left', facing: 'right', stand: { x: object.tile.x - 1, y: object.tile.y } },
+      { dir: 'right', facing: 'left', stand: { x: object.tile.x + 1, y: object.tile.y } },
+      { dir: 'up', facing: 'down', stand: { x: object.tile.x, y: object.tile.y - 1 } },
+      { dir: 'down', facing: 'up', stand: { x: object.tile.x, y: object.tile.y + 1 } },
+    ].filter((o) => scene.zoneMap.isWalkable(o.stand));
+
+    const pick = options[0];
+    return pick ? { tile: object.tile, stand: pick.stand, facing: pick.facing } : null;
+  }, { sceneKey, id });
+}
+
 async function gameState(page) {
   return page.evaluate((sceneKey) => {
     const game = window.__COMMONS__?.game;
@@ -202,13 +228,24 @@ try {
   console.log('\nboot');
   const boot = await gameState(page);
   check('Town Square scene is active', boot?.active === true);
-  check('map is 40x30', boot?.mapSize.w === 40 && boot?.mapSize.h === 30, JSON.stringify(boot?.mapSize));
+  // A floor, not an equality: the square is meant to grow, and the property
+  // worth asserting is that a full map loaded rather than a stub.
+  check('a full-size map loaded', (boot?.mapSize.w ?? 0) >= 40 && (boot?.mapSize.h ?? 0) >= 30,
+    JSON.stringify(boot?.mapSize));
   // A total goes stale every time the square gains a sign or a door, and it was
   // never the interesting property anyway — that the map parses into a sensible
   // number of objects is.
   check('the map parses its interactables', (boot?.interactableCount ?? 0) >= 12,
     `got ${boot?.interactableCount}`);
-  check('player spawned at (19,20)', boot?.tile.x === 19 && boot?.tile.y === 20, JSON.stringify(boot?.tile));
+  // The map's own spawn point, not a copy of it — the two disagreeing is the
+  // bug this is here to catch.
+  const mapSpawn = await page.evaluate((key) => {
+    const scene = window.__COMMONS__.game.scene.getScene(key);
+    return { x: scene.zoneMap.mapSpawnPoint.x, y: scene.zoneMap.mapSpawnPoint.y };
+  }, SCENE_KEY);
+  check('player spawned on the map spawn point',
+    boot?.tile.x === mapSpawn.x && boot?.tile.y === mapSpawn.y,
+    `${JSON.stringify(boot?.tile)} vs ${JSON.stringify(mapSpawn)}`);
 
   // --- holding a direction chains tiles ---------------------------------
   console.log('\nmovement');
@@ -260,28 +297,59 @@ try {
 
   // --- collision --------------------------------------------------------
   console.log('\ncollision');
-  // sign_welcome blocks (20,20); the player at (19,20) faces it by pressing D.
-  await teleport(page, 19, 20, 'down');
-  await holdKey(page, 'KeyD', 400);
+  // Stand beside the welcome sign, wherever the map put it, and walk into it.
+  const welcome = await facingSpot(page, SCENE_KEY, 'sign_welcome');
+  check('the welcome sign is on the map', welcome !== null);
+  const bumpKey = { right: 'KeyD', left: 'KeyA', up: 'KeyW', down: 'KeyS' }[welcome.facing];
+  await teleport(page, welcome.stand.x, welcome.stand.y, 'down');
+  await holdKey(page, bumpKey, 400);
   const afterBump = await gameState(page);
-  check('walking into the signpost does not move the player', afterBump.tile.x === 19, `x=${afterBump.tile.x}`);
-  check('player still turns to face the obstacle', afterBump.facing === 'right', afterBump.facing);
+  check(
+    'walking into the signpost does not move the player',
+    afterBump.tile.x === welcome.stand.x && afterBump.tile.y === welcome.stand.y,
+    `at ${afterBump.tile.x},${afterBump.tile.y}`,
+  );
+  check('player still turns to face the obstacle', afterBump.facing === welcome.facing, afterBump.facing);
 
   // The fountain rim. Deliberately NOT a door: since Phase 2 doors actually
   // transition, so walking onto one here would tear down the scene this suite
   // is testing. Door transitions are covered by tools/phase2_world.mjs.
-  await teleport(page, 19, 19, 'up');
+  // Found rather than named: any tile you can stand on whose northern
+  // neighbour is solid scenery. In the square as drawn today that is the
+  // fountain rim, and it stays true whatever the fountain is moved to.
+  const wall = await page.evaluate((key) => {
+    const scene = window.__COMMONS__.game.scene.getScene(key);
+    const spawn = scene.zoneMap.mapSpawnPoint;
+    const blocked = new Set(scene.zoneMap.interactables.map((o) => `${o.tile.x},${o.tile.y}`));
+
+    let best = null;
+    for (let y = 1; y < scene.zoneMap.heightInTiles; y += 1) {
+      for (let x = 0; x < scene.zoneMap.widthInTiles; x += 1) {
+        const stand = { x, y };
+        const above = { x, y: y - 1 };
+        if (!scene.zoneMap.isWalkable(stand)) continue;
+        if (scene.zoneMap.isWalkable(above)) continue;
+        if (blocked.has(`${above.x},${above.y}`)) continue;
+        const distance = Math.abs(x - spawn.x) + Math.abs(y - spawn.y);
+        if (!best || distance < best.distance) best = { stand, distance };
+      }
+    }
+    return best?.stand ?? null;
+  }, SCENE_KEY);
+
+  check('the square has solid scenery to bump into', wall !== null);
+  await teleport(page, wall.x, wall.y, 'up');
   await holdKey(page, 'KeyW', 600);
   const afterEdge = await gameState(page);
-  check('cannot walk into the fountain', afterEdge.tile.y === 19, `y=${afterEdge.tile.y}`);
-  check('faces the fountain after bumping it', afterEdge.facing === 'up', afterEdge.facing);
+  check('cannot walk into solid scenery', afterEdge.tile.y === wall.y, `y=${afterEdge.tile.y}`);
+  check('faces it after bumping it', afterEdge.facing === 'up', afterEdge.facing);
 
   // --- interaction + dialogue -------------------------------------------
   console.log('\ninteraction');
   // The north-gate check above steps onto the park door, which opens a
   // "not open yet" dialogue. Clear it before asserting on a fresh one.
   await dismissDialogue(page);
-  await teleport(page, 19, 20, 'right'); // facing sign_welcome at (20,20)
+  await teleport(page, welcome.stand.x, welcome.stand.y, welcome.facing);
   await tapKey(page, 'Space');
   await page.waitForTimeout(220);
   const inDialogue = await gameState(page);
@@ -291,7 +359,11 @@ try {
   // Movement must be inert while blocked.
   await holdKey(page, 'KeyS', 300);
   const duringDialogue = await gameState(page);
-  check('WASD is ignored while dialogue is open', duringDialogue.tile.y === 20, `y=${duringDialogue.tile.y}`);
+  check(
+    'WASD is ignored while dialogue is open',
+    duringDialogue.tile.y === welcome.stand.y,
+    `y=${duringDialogue.tile.y}`,
+  );
 
   // Space through every page until it closes.
   await dismissDialogue(page);
@@ -301,7 +373,9 @@ try {
   check('control returns to the player after dialogue', afterDialogue.state === 'IDLE', afterDialogue.state);
 
   // --- NPC --------------------------------------------------------------
-  await teleport(page, 16, 16, 'left'); // facing npc_wanderer at (15,16)
+  const wanderer = await facingSpot(page, SCENE_KEY, 'npc_wanderer');
+  check('the wandering NPC is on the map', wanderer !== null);
+  await teleport(page, wanderer.stand.x, wanderer.stand.y, wanderer.facing);
   await tapKey(page, 'Space');
   await page.waitForTimeout(220);
   const npcDialogue = await gameState(page);

@@ -25,24 +25,55 @@
  * ---------------------------------------------------------------------------
  */
 
-export const COLORS = {
-  // Zone base palettes.
-  townSquareBg: '#7FA8C9',
-  libraryBg: '#B8A88F',
-  cafeBg: '#D9A87C',
-  arcadeBg: '#5B4B85',
-  terraceBg: '#3B4664',
-  greenhouseBg: '#89AE84',
-  parkBg: '#7FB98A',
+/**
+ * [ADDED] World brightness.
+ *
+ * The art palette below is authored at the lightness the tiles are DRAWN at,
+ * and every tile then stacks grain, seams and cast shadows on top of it — so
+ * the assembled world reads a good deal darker than the swatches do. This
+ * multiplies the world palette on the way out, which lifts the whole scene
+ * without re-authoring sixty colours or dimming the UI chrome that sits over
+ * it.
+ *
+ * It scales RGB rather than mixing toward white, so hue and saturation are
+ * preserved and colours brighten instead of washing out. 1 is the palette as
+ * written; above about 1.25 the paving starts to clip toward flat white.
+ */
+export const WORLD_BRIGHTNESS = 1.14;
 
+/** Scale one #rrggbb toward white by `factor`, clamped. Alpha suffixes pass through. */
+function brighten(hex: string, factor: number): string {
+  const match = /^#([0-9a-f]{6})([0-9a-f]{2})?$/i.exec(hex);
+  if (!match) return hex;
+
+  const value = parseInt(match[1]!, 16);
+  const scale = (channel: number) => Math.min(255, Math.round(channel * factor));
+  const r = scale((value >> 16) & 0xff);
+  const g = scale((value >> 8) & 0xff);
+  const b = scale(value & 0xff);
+
+  return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, '0')}${match[2] ?? ''}`;
+}
+
+function brightenAll<T extends Record<string, string>>(
+  palette: T,
+  factor: number,
+): { [K in keyof T]: string } {
+  return Object.fromEntries(
+    Object.entries(palette).map(([key, value]) => [key, brighten(value, factor)]),
+  ) as { [K in keyof T]: string };
+}
+
+/**
+ * UI chrome, NOT brightened: these are read against the world rather than part
+ * of it, and lifting them costs the contrast that makes them legible.
+ */
+const UI_COLORS = {
   dialogueBoxBg: '#FAFAF7',
   dialogueBoxText: '#23262B',
-
   statusStudying: '#3E8E6F',
   statusListening: '#4A6FA5',
   statusAfk: '#8C8C8C',
-
-  // [ADDED] UI chrome.
   dialogueBoxBorder: '#23262B',
   dialogueBoxShadow: '#00000033',
   dialogueBoxAccent: '#4A9DD9',
@@ -52,6 +83,21 @@ export const COLORS = {
   interactBubbleBg: '#FAFAF7',
   interactBubbleMark: '#E8613C',
   transitionFade: '#0B0D10',
+} as const;
+
+/** Everything the world itself is drawn from. Brightened as a whole. */
+const WORLD_COLORS = {
+  // Zone base palettes.
+  townSquareBg: '#7FA8C9',
+  libraryBg: '#B8A88F',
+  cafeBg: '#D9A87C',
+  arcadeBg: '#5B4B85',
+  terraceBg: '#3B4664',
+  greenhouseBg: '#89AE84',
+  parkBg: '#7FB98A',
+
+
+
 
   // ---- Modern city art palette [ADDED] ----
   // Ground
@@ -130,6 +176,11 @@ export const COLORS = {
   npcBody: '#7A5FA8',
   skin: '#E8BE96',
 } as const;
+
+export const COLORS = {
+  ...UI_COLORS,
+  ...brightenAll(WORLD_COLORS, WORLD_BRIGHTNESS),
+};
 
 export const SPACING = {
   /**

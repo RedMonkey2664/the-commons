@@ -26,6 +26,7 @@ import {
   ZONE_TRANSITION,
   getCosmetic,
   resolveEntryPoint,
+  tileInFront,
 } from '@commons/shared';
 import {
   ASSET_KEYS,
@@ -42,6 +43,7 @@ import type { InteractableObject } from '@commons/shared';
 import { tileToWorld } from '../systems/GridMovement';
 import { ZoneMap } from '../systems/ZoneMap';
 import { UIScene, ui } from '../ui/UIScene';
+import { WorldFx } from '../systems/WorldFx';
 import { MultiplayerSystem } from '../systems/MultiplayerSystem';
 import { NetworkClient } from '../systems/NetworkClient';
 import { JukeboxPlayer } from '../systems/JukeboxPlayer';
@@ -72,6 +74,8 @@ export abstract class ZoneScene extends Phaser.Scene {
   protected player!: Player;
   protected controls!: InputController;
   protected interactions!: InteractionSystem;
+  /** Reactive world effects: footfalls, arrivals, interaction confirmation. */
+  protected fx!: WorldFx;
   protected ambient?: AmbientAnimator;
   protected network?: NetworkClient;
   protected multiplayer?: MultiplayerSystem;
@@ -149,6 +153,7 @@ export abstract class ZoneScene extends Phaser.Scene {
     // this system, and both callbacks resolve lazily, so this ordering keeps
     // every field assigned before anything can fire.
     this.controls = new InputController(this);
+    this.fx = new WorldFx(this);
     this.setupChatInput();
 
     // Browsers block audio until a gesture, and every sound bails while the
@@ -173,6 +178,10 @@ export abstract class ZoneScene extends Phaser.Scene {
       stand: () => {
         this.player.stand();
         this.multiplayer?.pushStatus('idle');
+        // Safety net: every way of standing ends the focus session, not just
+        // the pod handler that usually does it. stop() is idempotent, so the
+        // ordinary path stopping it first costs nothing here.
+        ui.focus?.stop();
       },
       launchMinigame: (sceneKey) => this.launchMinigame(sceneKey),
       openDrinks: () => {
@@ -198,6 +207,13 @@ export abstract class ZoneScene extends Phaser.Scene {
 
     this.createPlayer();
     this.configureCamera();
+
+    // A ring where you land, so walking through a door arrives somewhere
+    // rather than simply cutting. Delayed past the camera fade-in, or it plays
+    // out behind black and nobody sees it.
+    this.time.delayedCall(ZONE_TRANSITION.fadeInMs, () => {
+      this.fx.arrival(this.player.sprite.x, this.player.sprite.y);
+    });
 
     // 03 puts a jukebox in the Cafe and a bandstand in the Park. Zones without
     // one build no audio engine at all rather than an idle one.
@@ -290,16 +306,19 @@ export abstract class ZoneScene extends Phaser.Scene {
     }
 
     if (this.controls.justPressed('menu')) {
-      ui.friends?.toggle();
+      // Esc closes the stats panel when that is what is open, rather than
+      // opening a second panel behind it.
+      if (ui.stats?.isOpen) ui.stats.close();
+      else ui.friends?.toggle();
       // Phaser latches just-pressed until it is read. Without draining here, a
       // Space pressed while the panel was open fires an interaction on the
       // frame the panel closes.
       this.controls.reset();
     }
 
-    // The friends panel is a modal overlay; the world keeps rendering but stops
-    // taking input, so nobody walks off while reading who is online.
-    if (ui.friends?.isOpen) {
+    // The friends and stats panels are modal overlays; the world keeps
+    // rendering but stops taking input, so nobody walks off while reading.
+    if (ui.friends?.isOpen || ui.stats?.isOpen) {
       this.controls.reset();
       return;
     }
@@ -315,7 +334,12 @@ export abstract class ZoneScene extends Phaser.Scene {
     }
 
     if (this.controls.justPressed('interact')) {
-      this.interactions.tryInteract(this.player.tile, this.player.facing);
+      // Only confirm a press that actually hit something — a pulse on empty
+      // ground would say "that worked" when nothing did.
+      if (this.interactions.tryInteract(this.player.tile, this.player.facing)) {
+        const target = tileInFront(this.player.tile, this.player.facing);
+        this.fx.interactPulse(target.x, target.y);
+      }
     }
 
     this.interactions.refreshBubbles(this.player.tile);
@@ -348,7 +372,11 @@ export abstract class ZoneScene extends Phaser.Scene {
       // Intent is sent as the step COMMITS locally, not on arrival: the client
       // predicts immediately and the server validates in parallel (02).
       onDepart: (_from, _to, facing) => this.network?.sendMove(facing),
-      onArrive: (tile) => this.interactions.handleTileEntered(tile),
+      onArrive: (tile) => {
+        this.interactions.handleTileEntered(tile);
+        // At the feet, not the centre: the sprite's origin is its base.
+        this.fx.footstep(this.player.sprite.x, this.player.sprite.y);
+      },
       onFacingChanged: (facing) => this.network?.sendFace(facing),
     });
   }
@@ -524,6 +552,14 @@ export abstract class ZoneScene extends Phaser.Scene {
       if (event.key.toLowerCase() === 'm' && !ui.dialogue?.isVisible && !ui.friends?.isOpen) {
         void this.voice?.toggleMute(this.zone);
       }
+
+      // Stats. Its own key rather than a tab inside the friends panel: what you
+      // have done and who is here are different questions, and burying one
+      // behind the other means neither is found.
+      if (event.key.toLowerCase() === 'p' && !ui.dialogue?.isVisible && !ui.friends?.isOpen) {
+        ui.stats?.toggle();
+        this.controls.reset();
+      }
     };
 
     keyboard.on('keydown', onKey);
@@ -694,6 +730,7 @@ export abstract class ZoneScene extends Phaser.Scene {
           { iconColor: event === 'join' ? COLORS.statusStudying : COLORS.statusAfk },
         );
       },
+      onRemoteAppeared: (x, y) => this.fx.arrival(x, y, COLORS.statusStudying),
     });
 
     try {

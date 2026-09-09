@@ -15,10 +15,12 @@ import Phaser from 'phaser';
 import { ChatPanel } from './ChatPanel';
 import { DialogueBox } from './DialogueBox';
 import { DrinkPanel } from './DrinkPanel';
+import { FocusTimer } from './FocusTimer';
 import { FriendsPanel } from './FriendsPanel';
 import { JukeboxPanel } from './JukeboxPanel';
 import { Hud } from './Hud';
 import { ItemPopup } from './ItemPopup';
+import { StatsPanel } from './StatsPanel';
 
 export class UIScene extends Phaser.Scene {
   static readonly KEY = 'UIScene';
@@ -26,10 +28,12 @@ export class UIScene extends Phaser.Scene {
   dialogue!: DialogueBox;
   popup!: ItemPopup;
   hud!: Hud;
+  focus!: FocusTimer;
   friends!: FriendsPanel;
   chat!: ChatPanel;
   jukebox!: JukeboxPanel;
   drinks!: DrinkPanel;
+  stats!: StatsPanel;
 
   constructor() {
     super({ key: UIScene.KEY });
@@ -39,10 +43,15 @@ export class UIScene extends Phaser.Scene {
     this.dialogue = new DialogueBox(this);
     this.popup = new ItemPopup(this);
     this.hud = new Hud(this);
+    this.focus = new FocusTimer(this);
     this.friends = new FriendsPanel(this);
     this.chat = new ChatPanel(this);
     this.jukebox = new JukeboxPanel(this);
     this.drinks = new DrinkPanel(this);
+    this.stats = new StatsPanel(this);
+    // The visit clock lives in the focus timer; the stats panel reads it rather
+    // than starting a second one that would disagree with it.
+    this.stats.setVisitClock(() => this.focus.visitSeconds);
 
     // Transparent overlay — the world scene below stays visible.
     this.cameras.main.setBackgroundColor('rgba(0,0,0,0)');
@@ -86,6 +95,10 @@ class UiFacade {
     return this.scene?.hud;
   }
 
+  get focus(): FocusTimer | undefined {
+    return this.scene?.focus;
+  }
+
   get friends(): FriendsPanel | undefined {
     return this.scene?.friends;
   }
@@ -96,6 +109,10 @@ class UiFacade {
 
   get chat(): ChatPanel | undefined {
     return this.scene?.chat;
+  }
+
+  get stats(): StatsPanel | undefined {
+    return this.scene?.stats;
   }
 
   get jukebox(): JukeboxPanel | undefined {

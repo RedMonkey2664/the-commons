@@ -208,20 +208,32 @@ def building(m, x0, y0, x1, y1, door_x=None, door_side="south"):
 
 def build_town_square():
     """
-    A modern civic square: paved plaza around a central fountain, glass-fronted
-    buildings on three sides, a park gate north, and street furniture throughout.
+    A modern civic square: a paved plaza and fountain at the centre of a city
+    block, ringed by glass-fronted street buildings and backed by towers.
+
+    Enlarged from 40x30 to 56x40 (nearly twice the ground) so the town reads as
+    a district rather than a courtyard. The layout logic is unchanged and
+    deliberately so: 03 asks that no zone be more than one hop from spawn, and a
+    bigger map makes that a promise you can break by accident. So every door
+    still opens onto a paved lane that runs unbroken back to the fountain, and
+    the extra space went into the things that make a city feel like one —
+    setbacks, cross streets, and a skyline behind the street frontage — rather
+    than into the distance between doors.
+
+    The towers along the edges carry no doors. They are scenery with depth: a
+    facade you cannot enter still tells you the square sits inside something
+    larger, which is the entire job of a skyline.
     """
-    W, H = 40, 30
+    W, H = 56, 40
     m = MapBuilder(W, H)
 
     # ---- ground -----------------------------------------------------------
-    # lawn everywhere, then carve the hard landscaping
     for y in range(H):
         for x in range(W):
             m.set_ground(x, y, GRASS)
 
     # central plaza
-    PX0, PY0, PX1, PY1 = 12, 9, 27, 22
+    PX0, PY0, PX1, PY1 = 18, 13, 37, 28
     m.fill_ground(PX0, PY0, PX1, PY1, PLAZA)
 
     # patterned banding inside the plaza
@@ -235,65 +247,66 @@ def build_town_square():
         m.set_ground(x, PY0 + 2, PLAZA_INLAY)
         m.set_ground(x, PY1 - 2, PLAZA_INLAY)
 
-    # avenues out to each building / gate
-    m.fill_ground(4, 15, PX0 - 1, 16, PAVING)        # west avenue
-    m.fill_ground(PX1 + 1, 15, 35, 16, PAVING)       # east avenue
-    m.fill_ground(19, 3, 20, PY0 - 1, PAVING_SEAM)   # north avenue to the park
-    m.fill_ground(19, PY1 + 1, 20, 26, PAVING_SEAM)  # south avenue to the arcade
+    # ---- streets ----------------------------------------------------------
+    # Two lanes wide, so two people can pass without one stepping onto grass.
+    m.fill_ground(5, 20, PX0 - 1, 21, PAVING)         # west avenue
+    m.fill_ground(PX1 + 1, 20, 50, 21, PAVING)        # east avenue
+    m.fill_ground(27, 3, 28, PY0 - 1, PAVING_SEAM)    # north avenue to the park
+    m.fill_ground(27, PY1 + 1, 28, 34, PAVING_SEAM)   # south avenue to the arcade
+
+    # A cross street behind the west frontage, so the west side is a block
+    # rather than a dead end.
+    m.fill_ground(16, 10, 17, 19, PAVING)
+    m.fill_ground(8, 10, 17, 10, PAVING)              # lane to the greenhouse
 
     # kerbs where paving meets lawn along the avenues
-    for x in range(4, PX0):
-        m.set_ground(x, 14, CURB)
-        m.set_ground(x, 17, GRASS_EDGE)
-    for x in range(PX1 + 1, 36):
-        m.set_ground(x, 14, CURB)
-        m.set_ground(x, 17, GRASS_EDGE)
+    for x in range(5, PX0):
+        m.set_ground(x, 19, CURB)
+        m.set_ground(x, 22, GRASS_EDGE)
+    for x in range(PX1 + 1, 51):
+        m.set_ground(x, 19, CURB)
+        m.set_ground(x, 22, GRASS_EDGE)
 
-    m.set_ground(9, 16, MANHOLE)
-    m.set_ground(31, 15, MANHOLE)
+    m.set_ground(11, 21, MANHOLE)
+    m.set_ground(44, 20, MANHOLE)
 
     # ---- fountain ---------------------------------------------------------
-    FX0, FY0, FX1, FY1 = 18, 14, 21, 17
+    FX0, FY0, FX1, FY1 = 26, 19, 29, 22
     m.fill_decor(FX0, FY0, FX1, FY1, WATER)
     m.set_decor(FX0 + 1, FY0 + 1, WATER_RIPPLE)
     m.set_decor(FX1 - 1, FY1 - 1, WATER_RIPPLE)
     m.outline_decor(FX0 - 1, FY0 - 1, FX1 + 1, FY1 + 1, FOUNTAIN_RIM)
 
-    # ---- buildings --------------------------------------------------------
-    lib_door = building(m, 2, 8, 9, 13, door_x=6, door_side="south")
-    cafe_door = building(m, 30, 8, 37, 13, door_x=33, door_side="south")
-    arc_door = building(m, 14, 26, 25, 29, door_x=19, door_side="north")
+    # ---- street frontage (the buildings you can actually enter) ------------
+    lib_door = building(m, 3, 12, 12, 17, door_x=7, door_side="south")
+    cafe_door = building(m, 43, 12, 52, 17, door_x=47, door_side="south")
+    arc_door = building(m, 20, 34, 35, 39, door_x=25, door_side="north")
+    green_door = building(m, 4, 4, 13, 9, door_x=8, door_side="south")
 
-    # A glasshouse on the north-west lawn, and a lift up to the terrace sharing
-    # the cafe block. Both are one step from the square, which 03 asks for
-    # explicitly ("never more than one hop from spawn to any zone").
-    green_door = building(m, 3, 2, 10, 6, door_x=7, door_side="south")
-
-    # forecourt paving in front of each entrance
-    m.fill_ground(4, 14, 8, 14, PAVING)
-    m.fill_ground(31, 14, 35, 14, PAVING)
-    m.fill_ground(17, 24, 22, 25, PAVING)
-    m.set_ground(lib_door[0], lib_door[1], PAVING)
-    m.set_ground(cafe_door[0], cafe_door[1], PAVING)
-    m.set_ground(arc_door[0], arc_door[1], PAVING)
-    # Route to the glasshouse door: one lane along y=7 between the glasshouse
-    # and the library roof, then down the gap east of the library to the west
-    # avenue. Paved as well as cleared, because the scatter pass runs later and
-    # replants any tile still reading as GRASS — a tree at x=9 sealed the door
-    # into a pocket the first time. Kept strictly to y=7: clearing y=8 as well
-    # punched a walkable hole straight through the library's north wall.
-    m.fill_decor(6, 7, 11, 7, -1)
-    m.fill_decor(10, 8, 11, 16, -1)
-    m.fill_ground(6, 7, 11, 7, PAVING)
-    m.fill_ground(10, 8, 11, 16, PAVING)
-    m.set_ground(green_door[0], green_door[1], PAVING)
+    # forecourts: paved aprons in front of every entrance, each one touching a
+    # lane. This is what keeps "one hop from spawn" true on a bigger map.
+    m.fill_decor(5, 18, 14, 19, -1)
+    m.fill_ground(5, 18, 14, 19, PAVING)              # library apron -> west avenue
+    m.fill_decor(43, 18, 52, 19, -1)
+    m.fill_ground(43, 18, 52, 19, PAVING)             # cafe + lift apron -> east avenue
+    m.fill_decor(19, 32, 36, 33, -1)
+    m.fill_ground(19, 32, 36, 33, PAVING)             # arcade + study apron -> south avenue
+    m.fill_decor(8, 10, 13, 11, -1)
+    m.fill_ground(8, 10, 13, 11, PAVING)              # greenhouse apron -> west lane
 
     # The terrace lift is a second street door in the cafe block rather than a
     # building of its own: the terrace IS the roof of that block, and giving it
     # a separate facade elsewhere in the square would say otherwise.
-    m.set_decor(36, 13, -1)
-    m.set_ground(36, 13, PAVING)
-    m.set_ground(36, 14, PAVING)
+    m.set_decor(51, 17, -1)
+    m.set_ground(51, 17, PAVING)
+
+    # The Study Rooms share the arcade block for the same reason — 03 puts them
+    # south of the square, and that facade is already there.
+    m.set_decor(31, 34, -1)
+    m.set_ground(31, 34, PAVING)
+
+    for door in (lib_door, cafe_door, arc_door, green_door):
+        m.set_ground(door[0], door[1], PAVING)
 
     # awnings flanking the entrances
     for ax in (lib_door[0] - 1, lib_door[0] + 1):
@@ -301,60 +314,87 @@ def build_town_square():
     for ax in (cafe_door[0] - 1, cafe_door[0] + 1):
         m.set_decor(ax, cafe_door[1], AWNING)
 
+    # ---- skyline: towers with no way in -----------------------------------
+    # Set BACK from the street frontage rather than beside it, so the square
+    # reads as a clearing in a city instead of a row of sheds.
+    for x0, y0, x1, y1 in (
+        (17, 2, 25, 7),     # north-west block
+        (30, 2, 39, 7),     # north-east block
+        (44, 2, 53, 8),     # far north-east tower
+        (2, 24, 11, 31),    # south-west tower
+        (45, 24, 53, 31),   # south-east tower
+        (2, 34, 15, 39),    # southern row, west of the arcade
+        (40, 34, 53, 39),   # southern row, east of the arcade
+    ):
+        building(m, x0, y0, x1, y1)
+
+    # A skyline band along the very top, behind everything: depth without cost.
+    for x in range(W):
+        if m.is_free(x, 0) and m.ground_at(x, 0) == GRASS:
+            m.set_decor(x, 0, SKYLINE)
+
     # ---- park gate (north) ------------------------------------------------
-    m.fill_ground(19, 0, 20, 2, PAVING_SEAM)
-    for x in range(14, 26):
-        if x not in (19, 20):
+    m.fill_ground(27, 0, 28, 2, PAVING_SEAM)
+    for x in range(23, 33):
+        if x not in (27, 28):
             m.set_decor(x, 2, HEDGE)
-    m.set_decor(18, 2, PILLAR)
-    m.set_decor(21, 2, PILLAR)
+    m.set_decor(26, 2, PILLAR)
+    m.set_decor(29, 2, PILLAR)
 
     # ---- landscaping ------------------------------------------------------
     # hedge screens along the plaza's outer corners
-    for x in range(PX0, PX0 + 4):
+    for x in range(PX0, PX0 + 5):
         m.set_decor(x, PY0 - 1, HEDGE)
         m.set_decor(x, PY1 + 1, HEDGE)
-    for x in range(PX1 - 3, PX1 + 1):
+    for x in range(PX1 - 4, PX1 + 1):
         m.set_decor(x, PY0 - 1, HEDGE)
         m.set_decor(x, PY1 + 1, HEDGE)
 
-    # benches facing the fountain
-    for bx in (16, 23):
-        m.set_decor(bx, 13, BENCH)
+    # Two kiosks inside the plaza. A square this size is a car park without
+    # something to walk AROUND — these break the sightline and give the north
+    # end of the plaza a reason to be walked through rather than across.
+    building(m, 20, 14, 22, 15)
+    building(m, 33, 14, 35, 15)
+
+    # benches facing the fountain, and a second rank against the kiosks
+    for bx in (23, 32):
         m.set_decor(bx, 18, BENCH)
+        m.set_decor(bx, 23, BENCH)
+    for bx in (21, 34):
+        m.set_decor(bx, 17, BENCH)
+    for bx in (22, 25, 30, 33):
+        m.set_decor(bx, 27, BENCH)
+
+    # planted beds at the plaza corners, inside the banding
+    for px, py in ((19, 16), (36, 16), (19, 25), (36, 25)):
+        m.set_decor(px, py, TREE_SMALL)
+    for px, py in ((20, 26), (35, 26), (20, 16), (35, 16)):
+        m.set_ground(px, py, FLOWERBED)
 
     # lamps at the plaza corners and along the avenues
-    for lx, ly in ((13, 10), (26, 10), (13, 21), (26, 21),
-                   (8, 14), (31, 14), (19, 8), (20, 23)):
+    for lx, ly in ((19, 14), (36, 14), (19, 27), (36, 27),
+                   (14, 20), (41, 21), (27, 12), (28, 29),
+                   (14, 12), (41, 12)):
         m.set_decor(lx, ly, LAMP)
 
     # planters framing the fountain approach
-    for px, py in ((17, 12), (22, 12), (17, 19), (22, 19)):
+    for px, py in ((24, 17), (31, 17), (24, 24), (31, 24)):
         m.set_decor(px, py, PLANTER)
 
     # bollards guarding the avenue mouths
-    for bx, by in ((11, 15), (11, 16), (28, 15), (28, 16)):
+    for bx, by in ((17, 20), (17, 21), (38, 20), (38, 21)):
         m.set_decor(bx, by, BOLLARD)
 
     # street trees lining the avenues
-    for x in range(5, 11, 2):
-        m.set_decor(x, 13, TREE_SMALL)
-        m.set_decor(x, 18, TREE_SMALL)
-    for x in range(30, 36, 2):
-        m.set_decor(x, 13, TREE_SMALL)
-        m.set_decor(x, 18, TREE_SMALL)
+    for x in range(6, 15, 2):
+        m.set_decor(x, 23, TREE_SMALL)
+    for x in range(40, 50, 2):
+        m.set_decor(x, 23, TREE_SMALL)
 
-    # ---- perimeter parkland ----------------------------------------------
-    for y in range(H):
-        for x in range(W):
-            if x in (0, 1, W - 2, W - 1) or y in (0, 1, H - 2, H - 1):
-                if m.is_free(x, y) and m.ground_at(x, y) == GRASS:
-                    m.set_decor(x, y, TREE)
-
-    # scattered greenery on the remaining lawn
-    for _ in range(420):
-        x = m.rng.randrange(2, W - 2)
-        y = m.rng.randrange(2, H - 2)
+    # scattered greenery on whatever lawn is left
+    for _ in range(520):
+        x = m.rng.randrange(1, W - 1)
+        y = m.rng.randrange(1, H - 1)
         if m.ground_at(x, y) != GRASS or not m.is_free(x, y):
             continue
         roll = m.rng.random()
@@ -372,58 +412,49 @@ def build_town_square():
             m.set_ground(x, y, GRASS_PATCH)
 
     # ---- objects ----------------------------------------------------------
-    m.add_point("spawn", "spawn", 19, 20)
+    m.add_point("spawn", "spawn", 27, 26)
 
-    m.add_object("sign_welcome", "signpost", 20, 20, True, {
+    m.add_object("sign_welcome", "signpost", 28, 26, True, {
         "text": "THE COMMONS - civic square.|"
                 "Library west, Cafe east, Arcade south, Park north.|"
                 "Nothing here is compulsory.",
     })
-    m.add_object("sign_library", "signpost", 11, 14, True, {
+    m.add_object("sign_library", "signpost", 16, 22, True, {
         "text": "WEST: THE LIBRARY|Focus pods and a reading room. Voices down inside.",
     })
-    m.add_object("sign_cafe", "signpost", 28, 14, True, {
+    m.add_object("sign_cafe", "signpost", 39, 22, True, {
         "text": "EAST: THE CAFE|Shared jukebox, warm drinks, loud opinions.",
     })
-    m.add_object("sign_park", "signpost", 21, 8, True, {
+    m.add_object("sign_park", "signpost", 29, 11, True, {
         "text": "NORTH: THE PARK|Benches and a bandstand. Nothing is required of you here.",
     })
-    m.add_object("sign_arcade", "signpost", 18, 23, True, {
+    m.add_object("sign_arcade", "signpost", 26, 31, True, {
         "text": "SOUTH: THE ARCADE|Cabinets, high scores, and the only losing in this town.",
     })
-    m.add_object("sign_greenhouse", "signpost", 12, 6, True, {
+    m.add_object("sign_greenhouse", "signpost", 14, 11, True, {
         "text": "NORTH-WEST: THE GREENHOUSE|Somewhere warm to work. Mind the watering cans.",
     })
-    m.add_object("sign_terrace", "signpost", 35, 14, True, {
+    m.add_object("sign_terrace", "signpost", 52, 19, True, {
         "text": "LIFT: THE SKYLINE TERRACE|Roof of the cafe block. Best at dusk.",
     })
 
-    m.add_object("npc_wanderer", "npc", 15, 16, True, {
+    m.add_object("npc_wanderer", "npc", 22, 20, True, {
         "text": "Oh - hey. I do laps round the fountain while my timer runs.|"
                 "Something about a moving avatar makes it easier to sit still.",
     })
-    m.add_object("npc_gardener", "npc", 25, 19, True, {
+    m.add_object("npc_gardener", "npc", 33, 25, True, {
         "text": "The planters are mine. The pigeons are not.|"
                 "Mind the wet paint on the east benches.",
     })
-
-    # 03 puts the Study Rooms south of the square. The Arcade occupies that
-    # facade, so they share the block with a second entrance rather than being
-    # pushed somewhere the layout doesn't call for.
-    # Clear the approach: the scatter pass above runs first and will happily
-    # plant a tree exactly where the entrance path needs to be.
-    m.fill_decor(22, 23, 24, 25, -1)
-    m.fill_ground(22, 23, 24, 25, PAVING)
-    m.set_ground(23, 26, PAVING)
 
     doors = (
         ("door_library", lib_door[0], lib_door[1], "library", "LIBRARY"),
         ("door_cafe", cafe_door[0], cafe_door[1], "cafe", "CAFE"),
         ("door_arcade", arc_door[0], arc_door[1], "arcade", "ARCADE"),
-        ("door_park", 19, 1, "park", "PARK"),
-        ("door_study_room", 23, 26, "study_room", "STUDY ROOMS"),
+        ("door_park", 27, 1, "park", "PARK"),
+        ("door_study_room", 31, 34, "study_room", "STUDY ROOMS"),
         ("door_greenhouse", green_door[0], green_door[1], "greenhouse", "GREENHOUSE"),
-        ("door_skyline_terrace", 36, 13, "skyline_terrace", "TERRACE"),
+        ("door_skyline_terrace", 51, 17, "skyline_terrace", "TERRACE"),
     )
     for name, tx, ty, zone, label in doors:
         m.set_decor(tx, ty, -1)

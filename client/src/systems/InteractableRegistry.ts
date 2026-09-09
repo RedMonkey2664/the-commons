@@ -15,6 +15,7 @@
 import type Phaser from 'phaser';
 import type { InteractableKind, InteractableObject, PlayerStatus, ZoneConfig, ZoneId } from '@commons/shared';
 import { COLORS, SIT, getMinigame, getZone } from '@commons/shared';
+import { durationText } from '../ui/FocusTimer';
 import { ui } from '../ui/UIScene';
 
 export interface InteractionContext {
@@ -101,11 +102,18 @@ export const INTERACTABLE_HANDLERS: Partial<Record<InteractableKind, Interaction
   focus_pod: (ctx) => {
     if (ctx.isSitting()) {
       ctx.stand();
-      ui.popup?.show('Session ended', { iconColor: COLORS.statusAfk });
+      // What the session was worth, not just that it ended — the number is the
+      // reason to have sat down, and it is gone from the screen a beat later.
+      const seconds = ui.focus?.stop() ?? 0;
+      ui.popup?.show(
+        seconds >= 60 ? `Session ended  ·  ${durationText(seconds)} focused` : 'Session ended',
+        { iconColor: COLORS.statusAfk },
+      );
       return;
     }
 
     ctx.sit('studying');
+    ui.focus?.start();
     // The icon waits for the sit to finish, so two things never animate at once.
     ctx.scene.time.delayedCall(SIT.statusIconDelayMs, () => {
       ui.popup?.show('Focus session started', { iconColor: COLORS.statusStudying });
