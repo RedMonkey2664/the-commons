@@ -33,6 +33,16 @@ export function clockText(totalSeconds: number): string {
   return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
 }
 
+/**
+ * "00:12:47" — Focus Mode's clock. Always shows hours, so the digits never
+ * shift sideways when a session passes its first hour.
+ */
+export function sessionClockText(totalSeconds: number): string {
+  const seconds = Math.max(0, Math.floor(totalSeconds));
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${pad(Math.floor(seconds / 3600))}:${pad(Math.floor((seconds % 3600) / 60))}:${pad(seconds % 60)}`;
+}
+
 /** "1h 24m" / "24m" / "45s" — for totals, where seconds stop being interesting. */
 export function durationText(totalSeconds: number): string {
   const seconds = Math.max(0, Math.floor(totalSeconds));
@@ -53,6 +63,10 @@ export class FocusTimer {
   /** Wall clock, not a frame counter: a backgrounded tab must not lose time. */
   private startedAt = 0;
   private running = false;
+  /** Paused stretches already closed, in ms. */
+  private pausedMs = 0;
+  /** When the current pause began, if one is open. */
+  private pausedAt?: number;
   private tick?: Phaser.Time.TimerEvent;
 
   /** Persisted focus seconds, excluding whatever is running right now. */
@@ -112,9 +126,37 @@ export class FocusTimer {
     void this.refreshStored();
   }
 
-  /** Seconds on the clock right now, 0 when not sitting. */
+  /**
+   * Focused seconds in this session, 0 when not sitting.
+   *
+   * Paused stretches are excluded — including one still open — because this
+   * number is what the progression system awards worlds for. The server does
+   * the same subtraction independently when it writes the session, so a
+   * tampered client can shorten its own display but not lengthen its record.
+   */
   get liveSeconds(): number {
-    return this.running ? (Date.now() - this.startedAt) / 1000 : 0;
+    if (!this.running) return 0;
+    const now = Date.now();
+    const paused = this.pausedMs + (this.pausedAt !== undefined ? now - this.pausedAt : 0);
+    return Math.max(0, (now - this.startedAt - paused) / 1000);
+  }
+
+  get isPaused(): boolean {
+    return this.pausedAt !== undefined;
+  }
+
+  /** Stop counting. Idempotent, so a double keypress cannot open two pauses. */
+  pause(): void {
+    if (!this.running || this.pausedAt !== undefined) return;
+    this.pausedAt = Date.now();
+    this.render();
+  }
+
+  resume(): void {
+    if (!this.running || this.pausedAt === undefined) return;
+    this.pausedMs += Date.now() - this.pausedAt;
+    this.pausedAt = undefined;
+    this.render();
   }
 
   /** Persisted focus time plus anything currently running. */
@@ -135,6 +177,8 @@ export class FocusTimer {
     if (this.running) return;
     this.running = true;
     this.startedAt = Date.now();
+    this.pausedMs = 0;
+    this.pausedAt = undefined;
 
     this.container.setVisible(true);
     this.scene.tweens.add({
@@ -166,9 +210,13 @@ export class FocusTimer {
   /** Ends the session and returns what it was worth, for the caller's popup. */
   stop(): number {
     if (!this.running) return 0;
+    // Read BEFORE clearing: liveSeconds already excludes any pause still open,
+    // so standing up while paused does not award the paused stretch.
     const seconds = this.liveSeconds;
 
     this.running = false;
+    this.pausedMs = 0;
+    this.pausedAt = undefined;
     this.tick?.remove();
     this.tick = undefined;
     this.scene.tweens.killTweensOf(this.ring);
@@ -216,8 +264,8 @@ export class FocusTimer {
     if (width === 0 || height === 0) return;
 
     const m = SPACING.hudMargin;
-    // Under the zone pill, which is 34 tall at the same margin.
-    const top = m + 34 + 10;
+    // Under the zone pill and the focus level pill, each 34 tall with a 10 gap.
+    const top = m + (34 + 10) * 2;
     const panelWidth = Math.max(196, this.totals.width + 34, this.elapsed.width + 34);
     const panelHeight = 96;
 

@@ -28,6 +28,11 @@ export interface InteractionContext {
   launchMinigame: (sceneKey: string) => void;
   /** Open the shared jukebox queue. False when this zone has no jukebox. */
   openJukebox: () => boolean;
+  /**
+   * Drop into Focus Mode: the world pushes in and the study scene takes over.
+   * The session clock has already started by then — this is presentation.
+   */
+  enterFocusMode: () => void;
   /** Open the cafe drink picker (03). */
   openDrinks: () => void;
   /** Walk out of this zone into another. Owned by ZoneScene (fade + room swap). */
@@ -118,6 +123,7 @@ export const INTERACTABLE_HANDLERS: Partial<Record<InteractableKind, Interaction
     ctx.scene.time.delayedCall(SIT.statusIconDelayMs, () => {
       ui.popup?.show('Focus session started', { iconColor: COLORS.statusStudying });
     });
+    ctx.enterFocusMode();
   },
 
   /** Cafe booths, park benches. Purely social — no timer, no status change. */

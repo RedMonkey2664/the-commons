@@ -51,6 +51,17 @@ export interface StudyTotals {
   sessionCount: number;
   /** Per-zone breakdown, keyed by zone id. */
   byZone: Record<string, number>;
+  /** The single longest recorded session. */
+  longestSeconds: number;
+  /**
+   * Focus time since the start of the caller's day.
+   *
+   * The CALLER supplies where its day starts, as an epoch timestamp. The server
+   * does not know the player's timezone, and "today" measured from UTC midnight
+   * is five and a half hours wrong for someone in India — the day would roll
+   * over mid-morning.
+   */
+  todaySeconds: number;
 }
 
 export interface HighScore {
@@ -98,7 +109,7 @@ export interface Store {
 
   // -- study time (11) ------------------------------------------------------
   recordStudySession(session: StudySession): Promise<StudyTotals>;
-  getStudyTotals(userId: string): Promise<StudyTotals>;
+  getStudyTotals(userId: string, dayStartMs?: number): Promise<StudyTotals>;
 
   // -- arcade (06) ----------------------------------------------------------
   submitScore(score: HighScore): Promise<ScoreResult>;

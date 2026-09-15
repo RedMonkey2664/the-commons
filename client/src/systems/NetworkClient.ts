@@ -317,6 +317,11 @@ export class NetworkClient {
     this.room?.send(CLIENT_MESSAGE.status, { status });
   }
 
+  /** Pause or resume the open focus session. Only ever subtracts time. */
+  sendFocusPause(paused: boolean): void {
+    this.room?.send(CLIENT_MESSAGE.focusPause, { paused });
+  }
+
   /** Order a drink, or '' to put it down. Cosmetic; the server validates it. */
   sendDrink(drink: string): void {
     this.room?.send(CLIENT_MESSAGE.drink, { drink });

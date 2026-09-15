@@ -12,3 +12,4 @@ export * from './cosmetics.js';
 export * from './drinks.js';
 export * from './zones.config.js';
 export * from './minigames.config.js';
+export * from './worlds.config.js';

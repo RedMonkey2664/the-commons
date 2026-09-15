@@ -19,6 +19,7 @@ import type {
   ChatSayIntent,
   Direction,
   DrinkIntent,
+  FocusPauseIntent,
   FaceIntent,
   JoinOptions,
   MoveIntent,
@@ -74,6 +75,10 @@ interface OpenStudySession {
   userId: string;
   displayName: string;
   startedAt: number;
+  /** Paused stretches already closed, in ms. Subtracted when the session ends. */
+  pausedMs: number;
+  /** When the current pause began, or undefined while running. */
+  pausedAt?: number;
 }
 
 export class ZoneRoom extends Room<ZoneState> {
@@ -107,6 +112,10 @@ export class ZoneRoom extends Room<ZoneState> {
 
     this.onMessage(CLIENT_MESSAGE.status, (client, message: StatusIntent) => {
       this.handleStatus(client, message);
+    });
+
+    this.onMessage(CLIENT_MESSAGE.focusPause, (client, message: FocusPauseIntent) => {
+      this.handleFocusPause(client, message);
     });
 
     this.onMessage(CLIENT_MESSAGE.drink, (client, message: DrinkIntent) => {
@@ -344,7 +353,28 @@ export class ZoneRoom extends Room<ZoneState> {
   private openStudySession(sessionId: string, displayName: string): void {
     const userId = this.userIds.get(sessionId);
     if (!userId) return;
-    this.studySessions.set(sessionId, { userId, displayName, startedAt: Date.now() });
+    this.studySessions.set(sessionId, { userId, displayName, startedAt: Date.now(), pausedMs: 0 });
+  }
+
+  /**
+   * Pause or resume an open session.
+   *
+   * Idempotent in both directions — a duplicate pause does not restart the
+   * pause clock, a duplicate resume does not subtract twice — because the
+   * client can send either more than once (a reconnect, a double keypress) and
+   * both mistakes would silently corrupt a statistic people care about.
+   */
+  private handleFocusPause(client: Client, message: FocusPauseIntent): void {
+    const open = this.studySessions.get(client.sessionId);
+    if (!open || typeof message?.paused !== 'boolean') return;
+
+    const now = Date.now();
+    if (message.paused && open.pausedAt === undefined) {
+      open.pausedAt = now;
+    } else if (!message.paused && open.pausedAt !== undefined) {
+      open.pausedMs += now - open.pausedAt;
+      open.pausedAt = undefined;
+    }
   }
 
   private closeStudySession(sessionId: string): void {
@@ -352,7 +382,11 @@ export class ZoneRoom extends Room<ZoneState> {
     if (!open) return;
     this.studySessions.delete(sessionId);
 
-    const seconds = Math.floor((Date.now() - open.startedAt) / 1000);
+    // Wall time minus every paused stretch, including one still open if the
+    // player stood up while paused.
+    const now = Date.now();
+    const paused = open.pausedMs + (open.pausedAt !== undefined ? now - open.pausedAt : 0);
+    const seconds = Math.floor((now - open.startedAt - paused) / 1000);
     if (seconds < MIN_STUDY_SECONDS) return; // a misclick is not study time
     const clamped = Math.min(seconds, MAX_STUDY_SECONDS);
 

@@ -16,6 +16,8 @@ import Phaser from 'phaser';
 import { COLORS } from '@commons/shared';
 import { BootScene } from './scenes/BootScene';
 import { TitleScene } from './scenes/TitleScene';
+import { FocusScene } from './scenes/FocusScene';
+import { WorldMapScene } from './scenes/WorldMapScene';
 import { UIScene } from './ui/UIScene';
 import { ZONE_SCENE_CLASSES } from './scenes/zoneSceneRegistry';
 import { MINIGAME_SCENE_CLASSES } from './scenes/minigames/registry';
@@ -39,5 +41,7 @@ export const GAME_CONFIG: Phaser.Types.Core.GameConfig = {
 
   // No physics engine: movement is tile-based and bespoke (04), and Arcade
   // physics would only add a second, conflicting notion of position.
-  scene: [BootScene, TitleScene, ...ZONE_SCENE_CLASSES, ...MINIGAME_SCENE_CLASSES, UIScene],
+  // FocusScene sits between the world and the UI: it covers the zone it was
+  // launched over, and the HUD's popups still read above it.
+  scene: [BootScene, TitleScene, ...ZONE_SCENE_CLASSES, ...MINIGAME_SCENE_CLASSES, FocusScene, WorldMapScene, UIScene],
 };

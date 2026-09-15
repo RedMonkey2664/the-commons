@@ -276,9 +276,21 @@ try {
     await page.keyboard.up('Space');
     await page.waitForTimeout(500);
 
+    // Sitting at a pod now opens Focus Mode, which takes the screen and the
+    // keyboard. Waited for here because everything after it — standing up, and
+    // then Esc — goes to that scene until it closes.
+    await page.waitForFunction(
+      () => window.__COMMONS__.game.scene.getScene('FocusScene')?.scene?.isActive?.() === true,
+      undefined,
+      { timeout: 10_000 },
+    ).catch(() => {});
+
     s = await worldState(page);
     check('sitting at a focus pod', s.sitting === true, s.state);
     check('status becomes studying, with no toggle', s.status === 'studying', s.status);
+    check('sitting opens Focus Mode', await page.evaluate(
+      () => window.__COMMONS__.game.scene.getScene('FocusScene')?.scene?.isActive?.() === true,
+    ));
 
     // WASD must do nothing while seated.
     await page.keyboard.down('KeyS');
@@ -288,11 +300,19 @@ try {
     const seated = await worldState(page);
     check('cannot walk away while seated', seated.tile.y === podApproach.y, `y=${seated.tile.y}`);
 
-    // Space again stands up.
-    await page.keyboard.down('Space');
+    // Leaving Focus Mode is what stands you up, and it plays a short completion
+    // sequence first — so this waits for the scene to close rather than for a
+    // fixed beat.
+    await page.keyboard.down('Escape');
     await page.waitForTimeout(90);
-    await page.keyboard.up('Space');
-    await page.waitForTimeout(500);
+    await page.keyboard.up('Escape');
+    await page.waitForFunction(
+      () => window.__COMMONS__.game.scene.getScene('FocusScene')?.scene?.isActive?.() !== true,
+      undefined,
+      { timeout: 20_000 },
+    ).catch(() => {});
+    await page.waitForTimeout(600);
+
     const stood = await worldState(page);
     check('standing up ends the session', stood.sitting === false && stood.status === 'idle', stood.status);
   }

@@ -178,6 +178,68 @@ class SfxEngine {
   transition(): void {
     this.blip(300, 0.22, 'sine', 0.07, 180);
   }
+
+  // -- Focus Mode -----------------------------------------------------------
+  // Quieter again than everything above. These play for hours, in a room
+  // someone is trying to think in: felt rather than heard, and never a loop.
+
+  /** Settling into Focus Mode: two soft, warm notes. */
+  focusEnter(): void {
+    this.blip(392, 0.5, 'sine', 0.045);
+    window.setTimeout(() => this.blip(523, 0.7, 'sine', 0.04), 140);
+  }
+
+  /** A session finished. Rising, unhurried. */
+  focusComplete(): void {
+    [523, 659, 784].forEach((f, i) => window.setTimeout(() => this.blip(f, 0.45, 'sine', 0.045), i * 130));
+  }
+
+  /** Pause falls, resume rises. */
+  focusToggle(paused: boolean): void {
+    this.blip(paused ? 440 : 520, 0.12, 'sine', 0.035, paused ? 330 : 660);
+  }
+
+  pageTurn(): void {
+    if (!this.allow('page', 400)) return;
+    this.noise(0.14, 0.05, 1800);
+    window.setTimeout(() => this.noise(0.09, 0.03, 2600), 110);
+  }
+
+  /** One key. The director spaces these into bursts, so typing has rhythm. */
+  keyTap(): void {
+    if (!this.allow('key', 45)) return;
+    this.noise(0.016, 0.03 + Math.random() * 0.015, 2400);
+  }
+
+  penScratch(): void {
+    if (!this.allow('scratch', 90)) return;
+    this.noise(0.05 + Math.random() * 0.04, 0.016, 3200);
+  }
+
+  highlightStroke(): void {
+    if (!this.allow('highlight', 600)) return;
+    this.noise(0.32, 0.018, 1400);
+  }
+
+  paperShuffle(): void {
+    if (!this.allow('shuffle', 300)) return;
+    this.noise(0.12, 0.04, 900);
+  }
+
+  /** A few taps of a pen on the desk while thinking. */
+  penTaps(count = 4): void {
+    if (!this.allow('pentap', 600)) return;
+    for (let i = 0; i < count; i += 1) {
+      window.setTimeout(() => this.blip(1400, 0.02, 'triangle', 0.02), i * 120);
+    }
+  }
+
+  /** The mug going back down on the desk. */
+  mugSet(): void {
+    if (!this.allow('mug', 400)) return;
+    this.blip(210, 0.09, 'sine', 0.05, 150);
+    this.noise(0.03, 0.025, 1200);
+  }
 }
 
 export const sfx = new SfxEngine();

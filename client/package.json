@@ -11,9 +11,16 @@
   },
   "dependencies": {
     "@commons/shared": "*",
+    "@rive-app/react-canvas": "^4.34.1",
     "colyseus.js": "^0.16.0",
+    "gsap": "^3.15.0",
     "livekit-client": "^2.22.3",
-    "phaser": "^3.80.0"
+    "lottie-react": "^3.1.2",
+    "motion": "^13.2.0",
+    "phaser": "^3.90.0",
+    "pixi.js": "^8.20.1",
+    "react-spring": "^10.0.4",
+    "three": "^0.186.0"
   },
   "devDependencies": {
     "typescript": "^5.6.3",

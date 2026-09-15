@@ -288,7 +288,12 @@ app.get('/progress/:userId', async (request, response) => {
 /** Study totals for the HUD / profile. */
 app.get('/study/:userId', async (request, response) => {
   try {
-    response.json(await getStore().getStudyTotals(request.params.userId));
+    // The client's own local midnight, so "today" means the player's today.
+    const dayStart = Number(request.query['dayStart']);
+    response.json(await getStore().getStudyTotals(
+      request.params.userId,
+      Number.isFinite(dayStart) ? dayStart : undefined,
+    ));
   } catch (error) {
     response.status(500).json({ error: (error as Error).message });
   }

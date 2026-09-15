@@ -1413,6 +1413,34 @@ function drawHat(
   }
 }
 
+/**
+ * The colours one character is built from, derived from its body colour.
+ *
+ * Exported because Focus Mode draws the SAME character seated at a desk, from
+ * tweenable parts rather than a walk frame. Two independent derivations of
+ * "what colour is this person's hair" would drift the moment either is touched,
+ * and the player would notice their avatar changing shade when they sat down.
+ */
+export function characterPalette(bodyColor: string) {
+  return {
+    skin: COLORS.skin,
+    skinShade: mix(COLORS.skin, '#000000', 0.18),
+    hair: mix(bodyColor, '#000000', 0.55),
+    hairLight: mix(mix(bodyColor, '#000000', 0.55), '#FFFFFF', 0.22),
+    shirt: bodyColor,
+    shirtShade: mix(bodyColor, '#000000', 0.28),
+    shirtLight: mix(bodyColor, '#FFFFFF', 0.22),
+    trousers: mix(bodyColor, '#2A2E36', 0.62),
+    trousersShade: mix(mix(bodyColor, '#2A2E36', 0.62), '#000000', 0.3),
+    shoe: '#2B2E33',
+    eye: '#23262B',
+    outline: 'rgba(20,22,26,0.55)',
+  };
+}
+
+/** Pixel helpers, shared with the Focus Mode art so both draw the same way. */
+export const paint = { rect, shadowEllipse, createCanvas };
+
 function drawCharacterFrame(
   ctx: Ctx,
   ox: number,

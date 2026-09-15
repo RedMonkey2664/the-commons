@@ -20,6 +20,7 @@ import { FriendsPanel } from './FriendsPanel';
 import { JukeboxPanel } from './JukeboxPanel';
 import { Hud } from './Hud';
 import { ItemPopup } from './ItemPopup';
+import { SessionSummary } from './SessionSummary';
 import { StatsPanel } from './StatsPanel';
 
 export class UIScene extends Phaser.Scene {
@@ -34,6 +35,7 @@ export class UIScene extends Phaser.Scene {
   jukebox!: JukeboxPanel;
   drinks!: DrinkPanel;
   stats!: StatsPanel;
+  summary!: SessionSummary;
 
   constructor() {
     super({ key: UIScene.KEY });
@@ -44,11 +46,14 @@ export class UIScene extends Phaser.Scene {
     this.popup = new ItemPopup(this);
     this.hud = new Hud(this);
     this.focus = new FocusTimer(this);
+    // The HUD's level line shows a running session on top of the real total.
+    this.hud.setFocusSource(() => this.focus);
     this.friends = new FriendsPanel(this);
     this.chat = new ChatPanel(this);
     this.jukebox = new JukeboxPanel(this);
     this.drinks = new DrinkPanel(this);
     this.stats = new StatsPanel(this);
+    this.summary = new SessionSummary(this);
     // The visit clock lives in the focus timer; the stats panel reads it rather
     // than starting a second one that would disagree with it.
     this.stats.setVisitClock(() => this.focus.visitSeconds);
@@ -113,6 +118,10 @@ class UiFacade {
 
   get stats(): StatsPanel | undefined {
     return this.scene?.stats;
+  }
+
+  get summary(): SessionSummary | undefined {
+    return this.scene?.summary;
   }
 
   get jukebox(): JukeboxPanel | undefined {

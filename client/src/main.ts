@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { GAME_CONFIG } from './config';
+import { progression } from './systems/Progression';
 
 export const game = new Phaser.Game(GAME_CONFIG);
 
@@ -14,8 +15,35 @@ export const game = new Phaser.Game(GAME_CONFIG);
  */
 declare global {
   interface Window {
-    __COMMONS__: { game: Phaser.Game };
+    __COMMONS__: { game: Phaser.Game; progression: typeof progression };
   }
 }
 
-window.__COMMONS__ = { game };
+// Progression joins the bridge for the same reason the game did: the only
+// honest way to test "the hours are real" is to read them out of the running
+// application. Its simulation methods no-op outside a dev build, so this
+// exposes a reader in production, not a cheat.
+window.__COMMONS__ = { game, progression };
+
+/**
+ * Load the persisted focus total once, at boot.
+ *
+ * Without this nothing reads the server until the journey screen is opened, so
+ * a freshly loaded page believes the player has zero hours — which is not just
+ * a stale display: an unlock earned in a previous session would not be noticed
+ * until they happened to press J, and the rocket would sit dark next to a world
+ * they had already paid for.
+ */
+void progression.refresh();
+
+/**
+ * Developer progression controls.
+ *
+ * Behind import.meta.env.DEV and behind a DYNAMIC import: Vite replaces the
+ * constant with `false` when building for production, the branch is dropped,
+ * and the module never enters the bundle. A panel that could award focus hours
+ * has no business being shipped to players in any form, disabled or otherwise.
+ */
+if (import.meta.env.DEV) {
+  void import('./dev/DevPanel').then((module) => module.mountDevPanel(game));
+}

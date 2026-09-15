@@ -204,15 +204,19 @@ export class JsonStore implements Store {
     return this.getStudyTotals(session.userId);
   }
 
-  async getStudyTotals(userId: string): Promise<StudyTotals> {
+  async getStudyTotals(userId: string, dayStartMs?: number): Promise<StudyTotals> {
     const rows = this.data.study.filter((s) => s.userId === userId);
     const byZone: Record<string, number> = {};
     let totalSeconds = 0;
+    let longestSeconds = 0;
+    let todaySeconds = 0;
     for (const row of rows) {
       totalSeconds += row.seconds;
       byZone[row.zoneId] = (byZone[row.zoneId] ?? 0) + row.seconds;
+      longestSeconds = Math.max(longestSeconds, row.seconds);
+      if (dayStartMs !== undefined && Date.parse(row.endedAt) >= dayStartMs) todaySeconds += row.seconds;
     }
-    return { totalSeconds, sessionCount: rows.length, byZone };
+    return { totalSeconds, sessionCount: rows.length, byZone, longestSeconds, todaySeconds };
   }
 
   // -- arcade --------------------------------------------------------------

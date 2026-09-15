@@ -115,6 +115,11 @@ export class GridMovement {
    * ignores WASD entirely, so a player cannot walk out from under a dialogue box.
    */
   setBlocked(blocked: boolean): void {
+    // Sitting outranks blocking. A seated player already ignores movement, so
+    // blocking them adds nothing, while the unblock that follows would drop
+    // them to IDLE and quietly stand them up.
+    if (this._state === 'SITTING') return;
+
     if (blocked) {
       this.bufferedDirection = null;
       this.turningDirection = null;
@@ -307,7 +312,18 @@ export class GridMovement {
     this.turningDirection = null;
     this.snapSpriteToTile();
     this.showIdleFrame();
-    this.setState('IDLE');
+
+    // A correction moves you; it does not get you out of your chair.
+    //
+    // The server echoes every player's authoritative position, and the client
+    // snaps to it here. For a seated player that snap is positionally a no-op —
+    // they are already on the seat tile — but resetting the state to IDLE stood
+    // them up in the movement system while every other system still believed
+    // they were sitting. Focus Mode then could not end its own session: leaving
+    // runs the same pod interaction that started it, found a standing player,
+    // and sat them back down instead of standing them up. It only happened with
+    // a server connected, which is exactly the case the offline tests missed.
+    if (this._state !== 'SITTING') this.setState('IDLE');
   }
 
   // -- rendering helpers ---------------------------------------------------

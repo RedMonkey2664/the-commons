@@ -25,6 +25,7 @@ import {
   ZONES,
   ZONE_TRANSITION,
   getCosmetic,
+  FOCUS,
   resolveEntryPoint,
   tileInFront,
 } from '@commons/shared';
@@ -44,6 +45,10 @@ import { tileToWorld } from '../systems/GridMovement';
 import { ZoneMap } from '../systems/ZoneMap';
 import { UIScene, ui } from '../ui/UIScene';
 import { WorldFx } from '../systems/WorldFx';
+import { FocusScene, focusMode, type FocusSceneData } from './FocusScene';
+import { WorldMapScene, worldMap } from './WorldMapScene';
+import { progression } from '../systems/Progression';
+import { getCosmetic as getCosmeticById } from '@commons/shared';
 import { MultiplayerSystem } from '../systems/MultiplayerSystem';
 import { NetworkClient } from '../systems/NetworkClient';
 import { JukeboxPlayer } from '../systems/JukeboxPlayer';
@@ -194,6 +199,7 @@ export abstract class ZoneScene extends Phaser.Scene {
         ui.drinks?.show();
         this.player.setBlocked(true);
       },
+      enterFocusMode: () => this.enterFocusMode(),
       openJukebox: () => {
         if (!this.jukeboxAudio) return false;
         // Browsers block audio until a gesture; interacting with the jukebox
@@ -301,6 +307,17 @@ export abstract class ZoneScene extends Phaser.Scene {
 
     // The composer and the modal panels each own the keyboard while open.
     if (ui.chat?.isComposing || ui.jukebox?.isOpen || ui.drinks?.isOpen) {
+      this.controls.reset();
+      return;
+    }
+
+    // Focus Mode owns the keyboard outright while it is up, and this check has
+    // to come BEFORE the menu key rather than alongside the panels below it.
+    // Esc is how you leave Focus Mode; when the zone scene also saw that press
+    // it opened the friends panel behind the overlay, and the panel then
+    // swallowed the next keypress — so leaving Focus Mode left the world
+    // silently unresponsive.
+    if (focusMode.active || worldMap.active) {
       this.controls.reset();
       return;
     }
@@ -506,6 +523,12 @@ export abstract class ZoneScene extends Phaser.Scene {
     if (!keyboard) return;
 
     const onKey = (event: KeyboardEvent) => {
+      // Focus Mode is a full-screen scene with its own keys (P pauses, Esc
+      // finishes). Every one of them also means something out here — P is the
+      // stats panel, M the mic — so the world stops listening entirely rather
+      // than acting on keys aimed at the scene covering it.
+      if (focusMode.active || worldMap.active) return;
+
       const chat = ui.chat;
       if (!chat) return;
 
@@ -558,6 +581,12 @@ export abstract class ZoneScene extends Phaser.Scene {
       // behind the other means neither is found.
       if (event.key.toLowerCase() === 'p' && !ui.dialogue?.isVisible && !ui.friends?.isOpen) {
         ui.stats?.toggle();
+        this.controls.reset();
+      }
+
+      // The journey: where your focus time has taken you, and where it can.
+      if (event.key.toLowerCase() === 'j' && !ui.dialogue?.isVisible && !ui.friends?.isOpen) {
+        this.scene.launch(WorldMapScene.KEY);
         this.controls.reset();
       }
     };
@@ -625,6 +654,55 @@ export abstract class ZoneScene extends Phaser.Scene {
    *
    * Cosmetic-only: this changes the colour of a sprite and nothing else.
    */
+  /**
+   * Push the world camera in on the player, then hand the screen to FocusScene.
+   *
+   * The zoom happens HERE, on the real world camera, rather than being faked
+   * inside the overlay: the camera already follows the player, so zooming it is
+   * genuinely moving toward your avatar, and the scrim fading in over the top
+   * hides the swap. Leaving Focus Mode reverses it.
+   */
+  private enterFocusMode(): void {
+    if (focusMode.active) return;
+
+    const camera = this.cameras.main;
+    const previousZoom = camera.zoom;
+
+    camera.zoomTo(previousZoom * FOCUS.enter.cameraZoom, FOCUS.enter.cameraZoomMs, 'Cubic.easeInOut');
+
+    const outfitId = session.cosmetic('outfit');
+    const hatId = session.cosmetic('hat');
+    const outfit = outfitId ? getCosmeticById(outfitId) : undefined;
+    const hat = hatId ? getCosmeticById(hatId) : undefined;
+
+    this.scene.launch(FocusScene.KEY, {
+      bodyColor: outfit?.color ?? COLORS.playerBody,
+      hat: hat?.style ? { color: hat.color, style: hat.style } : undefined,
+      zoneName: this.zone.displayName,
+      onExit: () => {
+        camera.zoomTo(previousZoom, FOCUS.exit.cameraRestoreMs, 'Cubic.easeInOut');
+        // Standing is what ENDS the session: it stops the focus timer and
+        // tells the server, exactly as pressing Space at the pod would.
+        this.interactions.tryInteract(this.player.tile, this.player.facing);
+
+        // Then progression reads what the SERVER recorded — not what the
+        // client's clock thought — and says what it was worth. Nothing about
+        // the avatar or the camera is involved; this is a different system
+        // reacting to the same event.
+        void progression.sessionEnded().then((result) => {
+          if (result.added <= 0) return;
+          ui.summary?.show(result.added, result.total, result.unlocked);
+          for (const world of result.unlocked) progression.markCelebrated(world.id);
+        });
+      },
+      onPauseChange: (paused) => {
+        if (paused) ui.focus?.pause();
+        else ui.focus?.resume();
+        this.network?.sendFocusPause(paused);
+      },
+    } satisfies FocusSceneData);
+  }
+
   private outfitTexture(): string {
     const outfitId = session.cosmetic('outfit');
     const hatId = session.cosmetic('hat');

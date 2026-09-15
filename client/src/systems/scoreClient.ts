@@ -76,11 +76,18 @@ export interface StudyTotalsResponse {
   totalSeconds: number;
   sessionCount: number;
   byZone: Record<string, number>;
+  longestSeconds: number;
+  todaySeconds: number;
 }
 
 export async function fetchStudyTotals(): Promise<StudyTotalsResponse | null> {
   try {
-    const response = await fetch(`${httpBase()}/study/${encodeURIComponent(session.userId)}`);
+    // Local midnight, computed here because only the browser knows its timezone.
+    const midnight = new Date();
+    midnight.setHours(0, 0, 0, 0);
+    const response = await fetch(
+      `${httpBase()}/study/${encodeURIComponent(session.userId)}?dayStart=${midnight.getTime()}`,
+    );
     if (!response.ok) return null;
     return (await response.json()) as StudyTotalsResponse;
   } catch {

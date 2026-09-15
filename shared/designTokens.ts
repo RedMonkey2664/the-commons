@@ -182,6 +182,66 @@ export const COLORS = {
   ...brightenAll(WORLD_COLORS, WORLD_BRIGHTNESS),
 };
 
+/**
+ * [ADDED] World palettes — one per progression world (worlds.config.ts).
+ *
+ * Kept here with every other colour rather than in the world config, so the
+ * rule that tunable colours live in one file still holds. A world names its
+ * palette; this says what the palette is.
+ */
+export interface WorldPalette {
+  /** The sky behind the room, top and bottom of the gradient. */
+  skyTop: string;
+  skyBottom: string;
+  wall: string;
+  floor: string;
+  /** What is seen through the window. */
+  windowSky: string;
+  windowHorizon: string;
+  /** The one bright thing in the window: moon, planet, aurora. */
+  windowAccent: string;
+  /** Dust in the lamplight. Fireflies in the forest, snow on the summit. */
+  mote: string;
+  glow: string;
+  /** Used on the world map for this world's card and progress bar. */
+  accent: string;
+}
+
+export type WorldPaletteId = 'dusk' | 'forest' | 'orbit' | 'summit' | 'deepField';
+
+export const WORLD_PALETTES: Record<WorldPaletteId, WorldPalette> = {
+  dusk: {
+    skyTop: '#1B2233', skyBottom: '#1D2438',
+    wall: '#2C3450', floor: '#4A3A2A',
+    windowSky: '#243049', windowHorizon: '#5A4458', windowAccent: '#FFF3CE',
+    mote: '#FFE9A8', glow: '#FFE9A8', accent: '#E8B86A',
+  },
+  forest: {
+    skyTop: '#0F1E17', skyBottom: '#142A1E',
+    wall: '#233A2B', floor: '#3E3222',
+    windowSky: '#123024', windowHorizon: '#1F4A30', windowAccent: '#D9F7A6',
+    mote: '#C8F27A', glow: '#F2E6A0', accent: '#7FCB7A',
+  },
+  orbit: {
+    skyTop: '#060A18', skyBottom: '#0B1330',
+    wall: '#1C2438', floor: '#2A3142',
+    windowSky: '#040814', windowHorizon: '#1E5AA8', windowAccent: '#8FD3FF',
+    mote: '#CFE6FF', glow: '#BFE0FF', accent: '#5AB0F0',
+  },
+  summit: {
+    skyTop: '#1A2536', skyBottom: '#2B3A52',
+    wall: '#3A4658', floor: '#4B4038',
+    windowSky: '#3E5474', windowHorizon: '#DCE6F2', windowAccent: '#FFFFFF',
+    mote: '#F2F6FF', glow: '#FFE2B8', accent: '#A9C8EC',
+  },
+  deepField: {
+    skyTop: '#0B0616', skyBottom: '#1A0B2E',
+    wall: '#221434', floor: '#2A1E36',
+    windowSky: '#08040F', windowHorizon: '#6A2C8A', windowAccent: '#FFB8F2',
+    mote: '#E6B8FF', glow: '#D9B8FF', accent: '#C28AF0',
+  },
+};
+
 export const SPACING = {
   /**
    * Base tile size in px — source art resolution.

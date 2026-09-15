@@ -187,23 +187,33 @@ export class PostgresStore implements Store {
     return this.getStudyTotals(session.userId);
   }
 
-  async getStudyTotals(userId: string): Promise<StudyTotals> {
-    const { rows } = await this.pool.query<{ zone_id: string; seconds: string; sessions: string }>(
-      `select zone_id, sum(seconds)::text as seconds, count(*)::text as sessions
+  async getStudyTotals(userId: string, dayStartMs?: number): Promise<StudyTotals> {
+    const { rows } = await this.pool.query<{
+      zone_id: string; seconds: string; sessions: string; longest: string; today: string;
+    }>(
+      `select zone_id,
+              sum(seconds)::text as seconds,
+              count(*)::text as sessions,
+              max(seconds)::text as longest,
+              coalesce(sum(seconds) filter (where ended_at >= to_timestamp($2::double precision / 1000)), 0)::text as today
          from study_sessions where user_id = $1 group by zone_id`,
-      [userId],
+      [userId, dayStartMs ?? Date.now()],
     );
 
     const byZone: Record<string, number> = {};
     let totalSeconds = 0;
     let sessionCount = 0;
+    let longestSeconds = 0;
+    let todaySeconds = 0;
     for (const row of rows) {
       const seconds = Number(row.seconds);
       byZone[row.zone_id] = seconds;
       totalSeconds += seconds;
       sessionCount += Number(row.sessions);
+      longestSeconds = Math.max(longestSeconds, Number(row.longest));
+      todaySeconds += Number(row.today);
     }
-    return { totalSeconds, sessionCount, byZone };
+    return { totalSeconds, sessionCount, byZone, longestSeconds, todaySeconds };
   }
 
   // -- arcade --------------------------------------------------------------

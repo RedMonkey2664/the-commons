@@ -11,7 +11,13 @@
 import Phaser from 'phaser';
 import type { VoiceAvailability, VoiceConnectionState } from '@commons/shared';
 import { clearStoredServerUrl, normaliseServerUrl, storedServerUrl } from '../systems/NetworkClient';
-import { COLORS, SPACING, TYPOGRAPHY, UI, hex } from '@commons/shared';
+import { COLORS, FOCUS, SPACING, TYPOGRAPHY, UI, WORLD_PALETTES, hex } from '@commons/shared';
+import { PROGRESSION_EVENTS, progression } from '../systems/Progression';
+import type { FocusTimer } from './FocusTimer';
+import { displayedFocusSeconds, drawLevelBar, focusLevel } from './focusLevel';
+
+/** The level bar inside the HUD pill. */
+const LEVEL_BAR = { width: 96, height: 6 };
 
 export class Hud {
   private readonly zonePill: Phaser.GameObjects.Graphics;
@@ -22,6 +28,20 @@ export class Hud {
   private readonly hint: Phaser.GameObjects.Text;
   private readonly micPill: Phaser.GameObjects.Graphics;
   private readonly micLabel: Phaser.GameObjects.Text;
+  /**
+   * "FOCUS  LV.03 ▰▰▰▱  27.4h", under the zone pill. Real, server-recorded
+   * hours; the level is the world they have opened (see focusLevel).
+   */
+  private readonly focusPill: Phaser.GameObjects.Graphics;
+  private readonly focusLabel: Phaser.GameObjects.Text;
+  private readonly levelLabel: Phaser.GameObjects.Text;
+  private readonly levelBar: Phaser.GameObjects.Graphics;
+  private readonly levelHours: Phaser.GameObjects.Text;
+  private focusSource?: () => FocusTimer | undefined;
+  private levelFraction = 0;
+  private levelAccent: string = COLORS.hudAccent;
+  /** What was last drawn, so a refresh that changes nothing redraws nothing. */
+  private levelKey = '';
   private readonly container: Phaser.GameObjects.Container;
 
   private connected = false;
@@ -62,7 +82,7 @@ export class Hud {
       .setOrigin(1, 0.5);
 
     this.hint = scene.add
-      .text(0, 0, 'WASD move   SPACE interact   ENTER chat   M mic   P stats   ESC friends', {
+      .text(0, 0, 'WASD move   SPACE interact   ENTER chat   M mic   P stats   J journey   ESC friends', {
         fontFamily: TYPOGRAPHY.dialogueFont,
         fontSize: `${TYPOGRAPHY.hudFontSize}px`,
         color: COLORS.hudText,
@@ -71,20 +91,69 @@ export class Hud {
       })
       .setOrigin(0, 1);
 
+    this.focusPill = scene.add.graphics();
+    const levelText = (content: string) =>
+      scene.add
+        .text(0, 0, content, {
+          fontFamily: TYPOGRAPHY.dialogueFont,
+          fontSize: `${TYPOGRAPHY.hudFontSize - 1}px`,
+          color: COLORS.hudText,
+        })
+        .setOrigin(0, 0.5);
+    this.focusLabel = levelText('FOCUS').setLetterSpacing(2).setAlpha(0.7);
+    this.levelLabel = levelText('');
+    this.levelBar = scene.add.graphics();
+    this.levelHours = levelText('').setAlpha(0.85);
+
     this.container = scene.add
       .container(0, 0, [
         this.zonePill, this.zoneLabel,
+        this.focusPill, this.focusLabel, this.levelLabel, this.levelBar, this.levelHours,
         this.statusPill, this.statusDot, this.statusLabel,
         this.micPill, this.micLabel,
         this.hint,
       ])
       .setDepth(900);
 
+    this.refreshLevel();
     this.layout();
     scene.scale.on(Phaser.Scale.Events.RESIZE, this.layout, this);
+
+    // Re-read on every progression change, and on a slow tick so a running
+    // session visibly moves the bar. Redraws only when something changed.
+    progression.on(PROGRESSION_EVENTS.progressChanged, this.refreshLevel, this);
+    const tick = scene.time.addEvent({
+      delay: FOCUS.hud.levelRefreshMs,
+      loop: true,
+      callback: () => this.refreshLevel(),
+    });
+
     scene.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       scene.scale.off(Phaser.Scale.Events.RESIZE, this.layout, this);
+      progression.off(PROGRESSION_EVENTS.progressChanged, this.refreshLevel, this);
+      tick.remove();
     });
+  }
+
+  /** Where a running session comes from. Set once the focus timer exists. */
+  setFocusSource(source: () => FocusTimer | undefined): void {
+    this.focusSource = source;
+    this.refreshLevel();
+  }
+
+  private refreshLevel(): void {
+    const seconds = displayedFocusSeconds(this.focusSource?.());
+    const level = seconds === null ? undefined : focusLevel(seconds);
+    const accent = WORLD_PALETTES[progression.currentWorld.palette].accent;
+    const key = level ? `${level.label}|${level.hoursText}|${level.fraction.toFixed(3)}|${accent}` : 'offline';
+    if (key === this.levelKey) return;
+    this.levelKey = key;
+
+    this.levelAccent = accent;
+    this.levelFraction = level?.fraction ?? 0;
+    this.levelLabel.setText(level ? level.label : 'offline');
+    this.levelHours.setText(level ? level.hoursText : '');
+    this.layout();
   }
 
   private layout(): void {
@@ -103,6 +172,31 @@ export class Hud {
     this.zonePill.fillRoundedRect(m, m, zoneWidth, pillHeight, 8);
     this.zonePill.fillStyle(hex(COLORS.hudAccent), 1);
     this.zonePill.fillRoundedRect(m, m + 8, 4, pillHeight - 16, 2);
+
+    // focus level pill, under the zone pill; its stripe is the world's colour
+    const levelTop = m + pillHeight + 10;
+    const levelMid = levelTop + pillHeight / 2;
+    this.focusLabel.setPosition(m + 16, levelMid);
+    this.levelLabel.setPosition(this.focusLabel.x + this.focusLabel.width + 10, levelMid);
+    const hasBar = this.levelHours.text.length > 0;
+    const barX = this.levelLabel.x + this.levelLabel.width + 10;
+    this.levelBar.clear();
+    if (hasBar) {
+      drawLevelBar(
+        this.levelBar, barX, levelMid - LEVEL_BAR.height / 2, LEVEL_BAR.width, LEVEL_BAR.height,
+        this.levelFraction, hex(this.levelAccent), hex(COLORS.hudText),
+      );
+    }
+    this.levelHours.setPosition(hasBar ? barX + LEVEL_BAR.width + 10 : barX, levelMid);
+    const levelRight = hasBar ? this.levelHours.x + this.levelHours.width : this.levelLabel.x + this.levelLabel.width;
+    const levelWidth = levelRight - m + 16;
+    this.focusPill.clear();
+    this.focusPill.fillStyle(0x000000, 0.25);
+    this.focusPill.fillRoundedRect(m + 2, levelTop + 3, levelWidth, pillHeight, 8);
+    this.focusPill.fillStyle(hex(COLORS.hudBg), 0.92);
+    this.focusPill.fillRoundedRect(m, levelTop, levelWidth, pillHeight, 8);
+    this.focusPill.fillStyle(hex(this.levelAccent), 1);
+    this.focusPill.fillRoundedRect(m, levelTop + 8, 4, pillHeight - 16, 2);
 
     // connection pill, top-right
     this.statusLabel.setPosition(width - m - 16, m + pillHeight / 2);

@@ -31,7 +31,20 @@ export const CLIENT_MESSAGE = {
   status: 'status',
   /** Order (or put down) a cafe drink. Cosmetic only. */
   drink: 'drink',
+  /**
+   * Pause or resume the current focus session. `{ paused: boolean }`.
+   *
+   * Only ever SUBTRACTS time. The server still times the session from its own
+   * clock; this tells it which stretches not to count. A message that could add
+   * time would let a client award itself hours, which is the one thing the
+   * progression system cannot tolerate.
+   */
+  focusPause: 'focus_pause',
 } as const;
+
+export interface FocusPauseIntent {
+  paused: boolean;
+}
 
 /** Server -> client message names. */
 export const SERVER_MESSAGE = {

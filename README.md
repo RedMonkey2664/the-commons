@@ -15,28 +15,39 @@ The point is **presence, not progression** — see
 |---|---|---|
 | **0** | Single-player skeleton: Town Square, WASD grid movement, collision, camera | **Done** — 27/27 smoke checks |
 | **1** | Colyseus server, multiplayer sync in Town Square | **Done** — 27/27 sync checks |
-| **2** | All zones + zone transitions + NPC dialogue + friends list | **Done** — 43/43 world checks |
+| **2** | All zones + zone transitions + NPC dialogue + friends list | **Done** — 44/44 world checks |
 | **3** | Persistence, arcade minigames, study tracking, text chat | **Done** — 20/20 arcade checks |
 | **4** | Shared jukebox + voice policy | **Done** — 20/20 music checks |
 | **5** | Remaining minigames, cosmetics, ambient life, sound | **Done** — 37/37 polish checks |
 | **6** | Two more zones, two more cabinets, cafe drinks, interior art | **Done** — 29/29 world checks |
 | **7** | Deployable server: CORS allowlist, env config, graceful shutdown, host configs | **Done** — 14/14 deploy checks |
 | **7b** | One-URL deploy: server serves the client, nothing to configure | **Done** — 12/12 single-origin checks |
+| **8** | Focus Mode: a study scene, a behaving avatar, a directed and edited camera | **Done** — 34/34 focus checks |
+| **9** | Progression: focus hours, worlds, the rocket, developer mode | **Done** — 24/24 progression checks |
 | 3a | Supabase auth + real accounts | **Blocked** — needs credentials |
 | 4a | Voice transport (LiveKit) | **Blocked** — needs credentials |
 | 7a | Actually hosting it | **Ready** — push to a host, set nothing; see [Deploying](#deploying) |
 | 5a | Real pixel art to replace the procedural placeholders | **Blocked** — needs source art |
 
-229 checks across the nine suites. Every one drives a real browser against a
+288 checks across the eleven suites. Every one drives a real browser against a
 real server and asserts on real game state; none of them stub the game.
 
-Enlarging the town square broke eleven of them, and every one broke the same
-way: a map coordinate restated in a test. "Town square is 40x30", "sign_welcome
+Two of these suites were caught out by the same class of mistake, in different
+decades of the codebase. Enlarging the town square broke eleven checks, every
+one the same way: a map coordinate restated in a test. "Town square is 40x30", "sign_welcome
 is at (20,20)", "the server's column is x=19" — all true when written, none of
 them checked by anything. They now read the door, the spawn and the sign out of
 the loaded map, which is the same lesson as
 [Where the config claim leaked](#where-the-config-claim-leaked), learned again
 in the test suite rather than the engine.
+
+Focus Mode then broke three more — and those were the useful kind. The suite
+had asserted that the player was standing AFTER leaving Focus Mode but never
+that they were SEATED during it, and a real bug lived in exactly that gap: the
+server's position echo reset the movement state and quietly stood a seated
+player up, so Focus Mode could not end its own session. It only reproduced with
+a server connected, which the offline suite never was. The check that would have
+caught it exists now.
 
 `phase1_sync` is the one that is not reliably green on every machine: on
 Windows it has come back one check short twice for two different environmental
@@ -139,6 +150,8 @@ node tools/phase5_polish.mjs  # remaining minigames, cosmetics, ambient
 node tools/phase6_world.mjs   # new zones, new cabinets, cafe drinks
 node tools/phase7_deploy.mjs  # PRODUCTION build + cross-origin + CORS
 node tools/phase7b_single_origin.mjs # the one-URL deploy, configuring nothing
+node tools/phase8_focus.mjs   # Focus Mode: behaviour, camera, pause, leaks
+node tools/phase9_progression.mjs # focus hours are real, and what they unlock
 node tools/capture_zones.mjs  # screenshot zones, for looking at rather than asserting on
 node tools/capture_tileset.mjs # dump the generated tileset, labelled by index
 node tools/capture_screens.mjs # screenshot the loading, title and world screens
@@ -157,6 +170,7 @@ Both need `npx playwright install chromium` once. Add `--headed` to watch.
 | `Enter` | Chat (Enter sends, Esc cancels) |
 | `M` | Toggle microphone |
 | `P` | Your stats |
+| `J` | Your journey — worlds, progress, the rocket |
 | `Esc` | Friends panel |
 
 Tap a direction you aren't facing to **turn in place**; hold it to walk.
@@ -420,6 +434,147 @@ lasted, and how many people this browser has shared a room with.
 11 puts presence over progression, so both read as an account of time spent
 rather than a score to climb. There is no streak, no daily goal and no number
 that goes down if you stop.
+
+## Focus Mode
+
+Sitting at a focus pod does not open a timer panel — it drops you into a scene.
+The world pushes in on your avatar, a desk rises into frame, and your character
+starts working while a camera watches them.
+
+**The avatar is a rig, not a sprite.** `FocusAvatar` composes the same character
+out of separate pieces — head, torso, two arms — so the behaviour system can
+tween them. An arm that writes is an arm rotating a few degrees; chin-on-hand
+slides the shoulder up and inward rather than swinging it out, because the arm
+has no elbow and rotation alone reads as pointing. Colours come from
+`characterPalette()` in `placeholderArt`, so the person who sits down is
+recognisably the one who walked in, cosmetics and all.
+
+**Twenty-eight behaviours decide what they do**, in `AvatarBehavior.ts` — reading,
+writing, typing, highlighting, turning a page, scrolling back, squaring up the
+notes, tapping a pen, rubbing tired eyes, loosening the wrists, a sip of coffee,
+and the rarer ones: confusion, a struggle, a realisation, a small victory. Three
+separate mechanisms stop it reading as a loop:
+
+| | |
+|---|---|
+| Weight | Reading is eighteen times likelier than a celebration, so rare behaviours stay rare and keep their charm |
+| History | The last four behaviours are refused outright, so write→think→write cannot establish itself even though those carry the most weight |
+| Follow-on bias | Each behaviour skews what comes next: struggling leads to sighs and head-scratching, zoning out leads to catching yourself |
+
+Durations vary per behaviour (2.2–11s), a beat of stillness is randomly inserted
+between them, and behaviours have internal **beats** — writing stops mid-sentence
+to check the book and carries on — because good animation reads action → pause →
+reaction, and a single pose held for eight seconds reads as a screensaver.
+
+Things happen on the desk, too: a page turns over the spine, a highlighter
+stroke runs along a line, the notes get squared up, the mug leaves the desk for
+the hand and comes back. A behaviour calls `cue()` at the right beat and the
+scene animates the prop.
+
+**The camera has nine framings and three cutaways** (`FocusCamera.ts`):
+establishing, medium, three-quarter, side profile, over-the-shoulder, close-up,
+two desk details and a finale — and then the window, the lamp, and the mug going
+cold. Now and then (never twice running, never during a big moment) it looks at
+the room instead of the person, which is what turns a character on a loop into
+a place you are spending time in. It is told what the avatar is doing and picks
+framings that suit it — close on a struggle, on the book for a highlighter —
+with the same weighting and history rules. Stillness is the default state of a
+camera watching someone study.
+
+**It edits, not just moves.** Four transitions, each chosen for what it joins:
+
+| | |
+|---|---|
+| Glide | A slow dolly; the default, and the calmest |
+| Match cut | Drift out, cut mid-drift into a shot already drifting the same way — the eye carries the motion across and never sees the join |
+| Hard cut | Held until the avatar next moves, so it lands on the action |
+| Dip | A brief dip through dark; the soft transition, used sparingly |
+
+Never two hard cuts running, never two dips close together. A flat scene cannot
+orbit, so shots that imply a new angle ask the avatar to **turn** — a profile
+head, or the back of one — and the turn happens inside a cut, where an editor
+would hide it, never in front of the lens.
+
+**`FocusCinematicDirector`** is where the performance and the camera meet. A new
+behaviour releases a waiting cut and can shorten a hold; a framing, while it
+holds, makes the behaviours it frames well likelier (on the hands, the hands
+work); and both drive sound — synthesised page turns, key taps in bursts, pen
+scratches, a mug set down, all quieter than anything else in the game.
+
+**Depth and frame.** The wall and window drift slower than the desk as the
+camera moves and a few soft motes drift close to the lens; a vignette and
+letterbox bars frame the picture. The HUD is drawn by a camera of its own:
+pinned objects are still zoomed by the camera that draws them, and before this
+a close-up pushed the clock clean off the screen. The clock reads
+`FOCUS 00:12:47`; under it, what the character is doing, and
+`LV.03 ▰▰▰▰▰▰▱▱ 27.4h` — real hours, where the level is the world those hours
+have opened. No XP, nothing to grind. The same line sits in the world HUD under
+the zone name.
+
+**Each world is filmed its own way** (`cinematic` in `worlds.config.ts`): dust
+rises at home, fireflies wander and blink in Greenwood, stars twinkle in orbit,
+snow falls at the summit, and orbit holds its shots longer and keeps looking out
+of the window.
+
+Choreography is GSAP, rendering is Phaser: each shot change is one timeline
+tweening a proxy that Phaser applies to its camera, because Phaser's own pan and
+zoom effects fight when they overlap. The avatar's own motion and the props stay
+on Phaser tweens. One library per job. Every timing lives in `FOCUS` in
+`shared/animationConfig.ts`.
+
+**Pausing (`P`) pauses the performance and the clock.** Focus time stops
+accruing and the server is told to subtract the gap, because progression is
+awarded for that number.
+
+## The journey — focus hours, worlds and the rocket
+
+Focus time is not just a statistic; it is the thing that opens worlds. `J` opens
+the journey: your total, the path of worlds, and the rocket that travels it.
+
+Worlds are defined in `shared/worlds.config.ts` — id, name, required hours,
+description, locked teaser, palette — and their colours live in
+`WORLD_PALETTES` in `designTokens` with every other colour. Adding a sixth world
+is one definition and one palette; the map, the rocket, the progress bar and the
+unlock logic all read the list and never name a world themselves. Thresholds are
+written in HOURS because that is how a person thinks about them, and converted
+to seconds in exactly one place.
+
+A world is **where you study**: entering one re-themes the Focus Mode room — its
+walls, its floor, the sky through its window, the colour of the dust in the
+lamplight. Unlocking one changes where you spend the next hour, not a badge in a
+menu.
+
+### The hours have to be real
+
+This is the part worth being strict about, because everything else is decoration
+on a number:
+
+- The **server** times sessions, from sitting down to standing up, and writes
+  one row when they end. The client's clock is a display.
+- **Paused time is subtracted by both sides.** The client stops counting and
+  sends `focus_pause`; the server subtracts the same stretches from its own
+  measurement. The message can only ever remove time — a message that could add
+  it would let a client award itself hours.
+- Progression **re-reads the persisted total** after a session is written. It
+  never adds seconds of its own, and never counts menus, animation or the time
+  you spend looking at the map.
+- Developer simulation is an in-memory overlay that replaces what is *displayed*
+  and never what is *stored*, so a simulated fifty hours leaves the real total
+  untouched and disappears the moment it is cleared.
+
+`tools/phase9_progression.mjs` asserts all four against a real server writing
+real rows — including that a paused session records the focused time and not the
+wall time.
+
+### Developer mode
+
+Guarded by `import.meta.env.DEV` **and** loaded through a dynamic import, so
+Vite drops it from a production build entirely — not hidden, absent. Anything
+shipped to a browser can be switched on by whoever is holding the browser, and a
+panel that awards focus hours has no business being in there. It can set or add
+simulated hours, unlock the next world or all of them, enter any world including
+locked ones, and replay the launch, transition and completion sequences. Every
+figure it shows is labelled SIMULATED.
 
 ## Deploying
 
