@@ -55,7 +55,10 @@ export const FOCUS_ART = {
   desk: 'focus_desk',
   chair: 'focus_chair',
   book: 'focus_book',
+  /** The back of the lid: what the camera sees from across the desk. */
   laptop: 'focus_laptop',
+  /** The screen side, for shots from behind the avatar. */
+  laptopScreen: 'focus_laptop_screen',
   mug: 'focus_mug',
   paper: 'focus_paper',
   pen: 'focus_pen',
@@ -414,7 +417,26 @@ function drawProps(scene: Phaser.Scene): void {
     }
   });
 
+  // The avatar faces the screen, so from across the desk the camera faces the
+  // BACK of the lid: a plain shell, a logo, the hinge, and a little of the
+  // screen's light spilling past its edges. Drawn screen-out, it read as the
+  // laptop pointing at the viewer instead of at the person using it.
   make(FOCUS_ART.laptop, 40, 30, (ctx) => {
+    const shell = COLORS.concreteDark;
+    rect(ctx, 4, 0, 32, 22, mix(shell, '#FFFFFF', 0.08));
+    // Top edge catching the lamp, which is on the left; the far side in shade.
+    rect(ctx, 4, 0, 32, 2, mix(shell, '#FFFFFF', 0.22));
+    rect(ctx, 30, 2, 6, 20, mix(shell, '#000000', 0.15));
+    rect(ctx, 18, 9, 4, 4, mix(shell, '#FFFFFF', 0.35));
+    rect(ctx, 3, 1, 1, 20, mix(COLORS.glassLight, shell, 0.35));
+    rect(ctx, 36, 1, 1, 20, mix(COLORS.glassLight, shell, 0.35));
+    // The hinge, and the back edge of the base showing beneath it.
+    rect(ctx, 6, 22, 28, 2, mix(shell, '#000000', 0.3));
+    rect(ctx, 1, 24, 38, 2, mix(shell, '#FFFFFF', 0.15));
+    rect(ctx, 1, 26, 38, 2, mix(shell, '#000000', 0.3));
+  });
+
+  make(FOCUS_ART.laptopScreen, 40, 30, (ctx) => {
     const shell = COLORS.concreteDark;
     rect(ctx, 4, 0, 32, 21, shell);
     rect(ctx, 6, 2, 28, 17, mix(COLORS.glassLight, '#000000', 0.15));

@@ -228,6 +228,11 @@ export class FocusScene extends Phaser.Scene {
     // The clock is READ, never advanced. FocusTimer owns it.
     this.clock.setText(sessionClockText(ui.focus?.liveSeconds ?? 0));
 
+    // The laptop faces the avatar. Seen from behind them, that means its
+    // screen faces the camera; from anywhere else, the back of the lid does.
+    const laptop = this.avatar.facing === 'back' ? FOCUS_ART.laptopScreen : FOCUS_ART.laptop;
+    if (this.props.laptop.texture.key !== laptop) this.props.laptop.setTexture(laptop);
+
     if (!this.leaving) {
       const behavior = this.machine.currentId;
       if (behavior && behavior !== 'settle') this.setCaption(CAPTIONS[behavior] ?? '');

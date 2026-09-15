@@ -269,6 +269,11 @@ export class FocusAvatar {
     return this.currentFace;
   }
 
+  /** Which way the avatar is turned, so the set can turn with it. */
+  get facing(): FocusOrientation {
+    return this.orientation;
+  }
+
   /** Move both hands to a named target. Arms are the pose; everything else is garnish. */
   setHands(target: HandTarget, duration = 380): void {
     if (this.destroyed) return;
